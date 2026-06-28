@@ -36,8 +36,4 @@ rootProject.name = "PipePipe"
 include ':app'
 include ':ffmpeg'
 
-includeBuild('../PipePipeExtractor') {
-    dependencySubstitution {
-        substitute module('com.github.TeamNewPipe:NewPipeExtractor') using project(':extractor')
-    }
-}
+includeBuild('../PipePipeExtractor')

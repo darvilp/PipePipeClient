@@ -360,6 +360,11 @@ public class PlaylistFragment extends BaseListInfoFragment<StreamInfoItem, Playl
                 NavigationHelper.
                         playOnBackgroundPlayer(activity, getPlayQueue(), false));
 
+        playlistControlBinding.playlistCtrlPlayAllButton.setOnLongClickListener(view -> {
+            NavigationHelper.enqueueOnPlayer(activity, getPlayQueue(), PlayerType.VIDEO);
+            return true;
+        });
+
         playlistControlBinding.playlistCtrlPlayPopupButton.setOnLongClickListener(view -> {
             NavigationHelper.enqueueOnPlayer(activity, getPlayQueue(), PlayerType.POPUP);
             return true;

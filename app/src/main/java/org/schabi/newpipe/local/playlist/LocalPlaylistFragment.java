@@ -401,6 +401,9 @@ public class LocalPlaylistFragment extends BaseLocalListFragment<List<PlaylistSt
             playlistControlBinding.playlistCtrlPlayBgButton.setOnClickListener(null);
             playlistControlBinding.playlistCtrlPlayAllButton.setOnClickListener(null);
             playlistControlBinding.playlistCtrlPlayPopupButton.setOnClickListener(null);
+            playlistControlBinding.playlistCtrlPlayBgButton.setOnLongClickListener(null);
+            playlistControlBinding.playlistCtrlPlayAllButton.setOnLongClickListener(null);
+            playlistControlBinding.playlistCtrlPlayPopupButton.setOnLongClickListener(null);
 
             headerBinding = null;
             playlistControlBinding = null;
@@ -900,6 +903,11 @@ public class LocalPlaylistFragment extends BaseLocalListFragment<List<PlaylistSt
                 NavigationHelper.playOnBackgroundPlayer(activity, getPlayQueue(), false);
             }
 
+        });
+
+        playlistControlBinding.playlistCtrlPlayAllButton.setOnLongClickListener(view -> {
+            NavigationHelper.enqueueOnPlayer(activity, getPlayQueue(), PlayerType.VIDEO);
+            return true;
         });
 
         playlistControlBinding.playlistCtrlPlayPopupButton.setOnLongClickListener(view -> {

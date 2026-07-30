@@ -90,6 +90,8 @@ import org.schabi.newpipe.player.Player;
 import org.schabi.newpipe.player.PlaybackStartupTrace;
 import org.schabi.newpipe.player.event.OnKeyDownListener;
 import org.schabi.newpipe.player.event.PlayerServiceExtendedEventListener;
+import org.schabi.newpipe.player.helper.MainPlayerQueueBrowsingPolicy;
+import org.schabi.newpipe.player.helper.MainPlayerQueueBrowsingPolicy.Relation;
 import org.schabi.newpipe.player.helper.PlayerHelper;
 import org.schabi.newpipe.player.helper.PlayerHolder;
 import org.schabi.newpipe.player.mediasession.PlayerServiceInterface;
@@ -269,8 +271,11 @@ public final class VideoDetailFragment
             player.toggleFullscreen();
         }
 
-        if (playerIsNotStopped() && player.videoPlayerSelected()) {
-            addVideoPlayerView();
+        final Relation relation = mainPlayerRelationFor(serviceId, url);
+        if (playerIsNotStopped() && relation == Relation.ACTIVE_ITEM) {
+            attachMainPlayerToDisplayedVideo();
+        } else if (relation == Relation.OTHER_ITEM) {
+            pauseAndDetachMainPlayerForBrowsing();
         }
 
         if (playAfterConnect
@@ -897,6 +902,7 @@ public final class VideoDetailFragment
         if (isPlayerAvailable()
                 && player.getPlayQueue() != null
                 && player.videoPlayerSelected()
+                && mainPlayerRelationFor(serviceId, url) == Relation.ACTIVE_ITEM
                 && player.getPlayQueue().previous()) {
             return true; // no code here, as previous() was used in the if
         }
@@ -932,10 +938,9 @@ public final class VideoDetailFragment
 
     private void setupFromHistoryItem(final StackItem item) {
         setAutoPlay(false);
-        hideMainPlayerOnLoadingNewStream();
-
         setInitialData(item.getServiceId(), item.getUrl(),
                 item.getTitle() == null ? "" : item.getTitle(), item.getPlayQueue());
+        hideMainPlayerOnLoadingNewStream();
         startLoading(false);
 
         // Maybe an item was deleted in background activity
@@ -977,6 +982,10 @@ public final class VideoDetailFragment
                 && playQueue.getItem() != null && !playQueue.getItem().getUrl().equals(newUrl)) {
             // Preloading can be disabled since playback is surely being replaced.
             player.disablePreloadingOfCurrentTrack();
+        }
+
+        if (mainPlayerRelationFor(newServiceId, newUrl) == Relation.OTHER_ITEM) {
+            pauseAndDetachMainPlayerForBrowsing();
         }
 
         setInitialData(newServiceId, newUrl, newTitle, newQueue);
@@ -1055,6 +1064,7 @@ public final class VideoDetailFragment
                     isLoading.set(false);
                     hideMainPlayerOnLoadingNewStream();
                     handleResult(result);
+                    attachMainPlayerToDisplayedVideo();
                     showContent();
                     if (addToBackStack) {
                         if (playQueue == null) {
@@ -1435,6 +1445,14 @@ public final class VideoDetailFragment
             return;
         }
 
+        if (playerIsNotStopped()
+                && mainPlayerRelationFor(currentInfo.getServiceId(), currentInfo.getOriginalUrl())
+                == Relation.ACTIVE_ITEM) {
+            attachMainPlayerToDisplayedVideo();
+            player.play();
+            return;
+        }
+
         final PlayQueue queue = setupPlayQueueForIntent(false);
         PlaybackStartupTrace.mark(pendingStartupTraceId, "play_queue_ready");
 
@@ -1462,6 +1480,14 @@ public final class VideoDetailFragment
         if (!isPlayerServiceAvailable()
                 || playerService.getView() == null
                 || !player.videoPlayerSelected()) {
+            return;
+        }
+
+        final Relation relation = mainPlayerRelationFor(serviceId, url);
+        if (relation == Relation.ACTIVE_ITEM) {
+            return;
+        } else if (relation == Relation.OTHER_ITEM) {
+            pauseAndDetachMainPlayerForBrowsing();
             return;
         }
 
@@ -1517,6 +1543,51 @@ public final class VideoDetailFragment
                 && (!isPlayerAvailable() || player.videoPlayerSelected())
                 && bottomSheetState != BottomSheetBehavior.STATE_HIDDEN
                 && PlayerHelper.isAutoplayAllowedByUser(requireContext());
+    }
+
+    @NonNull
+    private Relation mainPlayerRelationFor(final int targetServiceId,
+                                           @Nullable final String targetUrl) {
+        if (!isPlayerAvailable() || player.getPlayQueue() == null) {
+            return Relation.NO_ACTIVE_MAIN_QUEUE;
+        }
+
+        @Nullable final PlayQueueItem activeItem = player.getPlayQueue().getItem();
+        return MainPlayerQueueBrowsingPolicy.classify(
+                player.getPlayerType(),
+                false,
+                activeItem == null ? null : activeItem.getServiceId(),
+                activeItem == null ? null : activeItem.getUrl(),
+                targetServiceId,
+                targetUrl);
+    }
+
+    private void pauseAndDetachMainPlayerForBrowsing() {
+        if (!isPlayerAndPlayerServiceAvailable()
+                || playerService.getView() == null
+                || !player.videoPlayerSelected()) {
+            return;
+        }
+
+        player.pause();
+        player.setRecovery();
+
+        if (binding != null) {
+            removeVideoPlayerView();
+        }
+        playerService.getView().setVisibility(View.GONE);
+    }
+
+    private void attachMainPlayerToDisplayedVideo() {
+        if (!isPlayerAndPlayerServiceAvailable()
+                || playerService.getView() == null
+                || player.isStopped()
+                || mainPlayerRelationFor(serviceId, url) != Relation.ACTIVE_ITEM) {
+            return;
+        }
+
+        playerService.getView().setVisibility(View.VISIBLE);
+        addVideoPlayerView();
     }
 
     private void addVideoPlayerView() {
@@ -2112,7 +2183,21 @@ public final class VideoDetailFragment
 
     @Override
     public void onQueueUpdate(final PlayQueue queue) {
-        playQueue = queue;
+        @Nullable final PlayQueueItem activeItem = queue.getItem();
+        final Relation relation = MainPlayerQueueBrowsingPolicy.classify(
+                player == null ? null : player.getPlayerType(),
+                false,
+                activeItem == null ? null : activeItem.getServiceId(),
+                activeItem == null ? null : activeItem.getUrl(),
+                serviceId,
+                url);
+
+        if (relation != Relation.OTHER_ITEM) {
+            playQueue = queue;
+            if (relation == Relation.ACTIVE_ITEM) {
+                attachMainPlayerToDisplayedVideo();
+            }
+        }
         if (DEBUG) {
             Log.d(TAG, "onQueueUpdate() called with: serviceId = ["
                     + serviceId + "], videoUrl = [" + url + "], name = ["
@@ -2124,13 +2209,15 @@ public final class VideoDetailFragment
         // deleted/added items inside Channel/Playlist queue and makes possible to have
         // a history of played items
         @Nullable final StackItem stackPeek = stack.peek();
-        if (stackPeek != null && !stackPeek.getPlayQueue().equals(queue)) {
-            @Nullable final PlayQueueItem playQueueItem = queue.getItem();
-            if (playQueueItem != null) {
-                stack.push(new StackItem(playQueueItem.getServiceId(), playQueueItem.getUrl(),
-                        playQueueItem.getTitle(), queue));
-                return;
-            } // else continue below
+        if (relation != Relation.OTHER_ITEM) {
+            if (stackPeek != null && !stackPeek.getPlayQueue().equals(queue)) {
+                @Nullable final PlayQueueItem playQueueItem = queue.getItem();
+                if (playQueueItem != null) {
+                    stack.push(new StackItem(playQueueItem.getServiceId(), playQueueItem.getUrl(),
+                            playQueueItem.getTitle(), queue));
+                    return;
+                } // else continue below
+            }
         }
 
         @Nullable final StackItem stackWithQueue = findQueueInStack(queue);
@@ -2251,7 +2338,8 @@ public final class VideoDetailFragment
         setupBrightness();
         if (!isPlayerAndPlayerServiceAvailable()
                 || playerService.getView() == null
-                || player.getParentActivity() == null) {
+                || player.getParentActivity() == null
+                || mainPlayerRelationFor(serviceId, url) != Relation.ACTIVE_ITEM) {
             return;
         }
 

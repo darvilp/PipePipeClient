@@ -23,6 +23,11 @@ public final class MainPlayerQueueBrowsingPolicy {
         return relation != Relation.NO_ACTIVE_MAIN_QUEUE && !playbackRequested;
     }
 
+    public static boolean shouldContinueAudioOnlyForBrowsing(
+            @NonNull final Relation relation) {
+        return relation == Relation.OTHER_ITEM;
+    }
+
     @NonNull
     public static Relation classify(@Nullable final PlayerType playerType,
                                     final boolean switchingPlayers,

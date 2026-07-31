@@ -274,8 +274,8 @@ public final class VideoDetailFragment
         final Relation relation = mainPlayerRelationFor(serviceId, url);
         if (playerIsNotStopped() && relation == Relation.ACTIVE_ITEM) {
             attachMainPlayerToDisplayedVideo();
-        } else if (relation == Relation.OTHER_ITEM) {
-            pauseAndDetachMainPlayerForBrowsing();
+        } else if (MainPlayerQueueBrowsingPolicy.shouldContinueAudioOnlyForBrowsing(relation)) {
+            continueAudioAndDetachMainPlayerForBrowsing();
         }
 
         if (playAfterConnect
@@ -985,7 +985,7 @@ public final class VideoDetailFragment
         }
 
         if (mainPlayerRelationFor(newServiceId, newUrl) == Relation.OTHER_ITEM) {
-            pauseAndDetachMainPlayerForBrowsing();
+            continueAudioAndDetachMainPlayerForBrowsing();
         }
 
         setInitialData(newServiceId, newUrl, newTitle, newQueue);
@@ -1487,7 +1487,7 @@ public final class VideoDetailFragment
         if (relation == Relation.ACTIVE_ITEM) {
             return;
         } else if (relation == Relation.OTHER_ITEM) {
-            pauseAndDetachMainPlayerForBrowsing();
+            continueAudioAndDetachMainPlayerForBrowsing();
             return;
         }
 
@@ -1562,15 +1562,14 @@ public final class VideoDetailFragment
                 targetUrl);
     }
 
-    private void pauseAndDetachMainPlayerForBrowsing() {
+    private void continueAudioAndDetachMainPlayerForBrowsing() {
         if (!isPlayerAndPlayerServiceAvailable()
                 || playerService.getView() == null
                 || !player.videoPlayerSelected()) {
             return;
         }
 
-        player.pause();
-        player.setRecovery();
+        player.setMainPlayerDetailsBrowsing(true);
 
         if (binding != null) {
             removeVideoPlayerView();
@@ -1586,6 +1585,7 @@ public final class VideoDetailFragment
             return;
         }
 
+        player.setMainPlayerDetailsBrowsing(false);
         playerService.getView().setVisibility(View.VISIBLE);
         addVideoPlayerView();
     }

@@ -46,6 +46,16 @@ public final class MainPlayerQueueBrowsingPolicyTest {
     }
 
     @Test
+    public void onlyBrowsingAnotherMainQueueItemContinuesAudioOnly() {
+        assertTrue(MainPlayerQueueBrowsingPolicy.shouldContinueAudioOnlyForBrowsing(
+                OTHER_ITEM));
+        assertFalse(MainPlayerQueueBrowsingPolicy.shouldContinueAudioOnlyForBrowsing(
+                ACTIVE_ITEM));
+        assertFalse(MainPlayerQueueBrowsingPolicy.shouldContinueAudioOnlyForBrowsing(
+                NO_ACTIVE_MAIN_QUEUE));
+    }
+
+    @Test
     public void popupAndBackgroundPlayersAreUnchanged() {
         assertEquals(NO_ACTIVE_MAIN_QUEUE, MainPlayerQueueBrowsingPolicy.classify(
                 PlayerType.POPUP, false, 0, "https://example.com/active",

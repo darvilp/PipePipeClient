@@ -296,6 +296,43 @@ public abstract class PlayQueue implements Serializable {
     }
 
     /**
+     * Inserts an item immediately after the currently selected item and selects the inserted item.
+     * <p>
+     * When the queue is shuffled, the item is inserted next in the effective shuffled order while
+     * retaining the normal append position in the unshuffled backup.
+     * </p>
+     *
+     * @param item the item to insert and select
+     */
+    public synchronized void insertNextAndSelect(@NonNull final PlayQueueItem item) {
+        final int currentIndex = getIndex();
+        @Nullable final PlayQueueItem currentItem = getItem();
+        final boolean preserveActiveAutoQueuedItem = currentIndex == size() - 1
+                && currentItem != null
+                && currentItem.isAutoQueued();
+        if (preserveActiveAutoQueuedItem) {
+            // append() replaces an unplayed auto-queued tail. The selected item is not a pending
+            // tail and must remain available to Previous after this explicit insertion.
+            currentItem.setAutoQueued(false);
+        }
+        try {
+            append(item);
+        } finally {
+            if (preserveActiveAutoQueuedItem) {
+                currentItem.setAutoQueued(true);
+            }
+        }
+
+        final int appendedIndex = size() - 1;
+        final int nextIndex = Math.min(currentIndex + 1, appendedIndex);
+        if (appendedIndex != nextIndex) {
+            move(appendedIndex, nextIndex);
+        }
+
+        setIndex(nextIndex);
+    }
+
+    /**
      * Removes the item at the given index from the play queue.
      * <p>
      * The current playing index will decrement if it is greater than the index being removed.
@@ -558,4 +595,3 @@ public abstract class PlayQueue implements Serializable {
         }
     }
 }
-

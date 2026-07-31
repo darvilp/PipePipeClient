@@ -210,6 +210,7 @@ public final class Player implements
     public static final String PLAY_QUEUE_KEY = "play_queue_key";
     public static final String ENQUEUE = "enqueue";
     public static final String ENQUEUE_NEXT = "enqueue_next";
+    public static final String ENQUEUE_NEXT_AND_PLAY = "enqueue_next_and_play";
     public static final String RESUME_PLAYBACK = "resume_playback";
     public static final String PLAY_WHEN_READY = "play_when_ready";
     public static final String PLAYER_TYPE = "player_type";
@@ -781,6 +782,20 @@ public final class Player implements
         }
         final PlayQueue newQueue = SerializedCache.getInstance().take(queueCache, PlayQueue.class);
         if (newQueue == null) {
+            return;
+        }
+
+        if (intent.getBooleanExtra(ENQUEUE_NEXT_AND_PLAY, false) && playQueue != null) {
+            final PlayQueueItem itemToPlay = newQueue.getItem();
+            if (itemToPlay == null) {
+                return;
+            }
+
+            saveStreamProgressState();
+            playQueue.insertNextAndSelect(itemToPlay);
+            // Synchronize the detail fragment with the selected queue before playback resumes.
+            notifyQueueUpdateToListeners();
+            play();
             return;
         }
 

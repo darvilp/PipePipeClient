@@ -1093,7 +1093,10 @@ public final class Player implements
     }
 
     public void setRecovery() {
-        if (playQueue == null || exoPlayerIsNull()) {
+        if (playQueue == null || exoPlayerIsNull()
+                || playQueue.getIndex() != simpleExoPlayer.getCurrentMediaItemIndex()) {
+            // The queue selection may change before ExoPlayer updates its timeline. Saving during
+            // that window would assign the previous item's position to the newly selected item.
             return;
         }
 

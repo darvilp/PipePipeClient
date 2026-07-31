@@ -3,9 +3,9 @@ package org.schabi.newpipe.player.playqueue;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.RecyclerView;
 
-public abstract class PlayQueueItemTouchCallback extends ItemTouchHelper.SimpleCallback {
-    private static final int MINIMUM_INITIAL_DRAG_VELOCITY = 10;
-    private static final int MAXIMUM_INITIAL_DRAG_VELOCITY = 25;
+import org.schabi.newpipe.views.ItemDragTouchHelperCallback;
+
+public abstract class PlayQueueItemTouchCallback extends ItemDragTouchHelperCallback {
 
     public PlayQueueItemTouchCallback() {
         super(ItemTouchHelper.UP | ItemTouchHelper.DOWN, ItemTouchHelper.RIGHT);
@@ -16,25 +16,19 @@ public abstract class PlayQueueItemTouchCallback extends ItemTouchHelper.SimpleC
     public abstract void onSwiped(int index);
 
     @Override
-    public int interpolateOutOfBoundsScroll(final RecyclerView recyclerView, final int viewSize,
-                                            final int viewSizeOutOfBounds, final int totalSize,
-                                            final long msSinceStartScroll) {
-        final int standardSpeed = super.interpolateOutOfBoundsScroll(recyclerView, viewSize,
-                viewSizeOutOfBounds, totalSize, msSinceStartScroll);
-        final int clampedAbsVelocity = Math.max(MINIMUM_INITIAL_DRAG_VELOCITY,
-                Math.min(Math.abs(standardSpeed), MAXIMUM_INITIAL_DRAG_VELOCITY));
-        return clampedAbsVelocity * (int) Math.signum(viewSizeOutOfBounds);
-    }
-
-    @Override
     public boolean onMove(final RecyclerView recyclerView, final RecyclerView.ViewHolder source,
                           final RecyclerView.ViewHolder target) {
         if (source.getItemViewType() != target.getItemViewType()) {
             return false;
         }
 
-        final int sourceIndex = source.getLayoutPosition();
-        final int targetIndex = target.getLayoutPosition();
+        final int sourceIndex = source.getBindingAdapterPosition();
+        final int targetIndex = target.getBindingAdapterPosition();
+        if (sourceIndex == RecyclerView.NO_POSITION || targetIndex == RecyclerView.NO_POSITION
+                || sourceIndex == targetIndex) {
+            return false;
+        }
+
         onMove(sourceIndex, targetIndex);
         return true;
     }

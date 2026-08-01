@@ -65,8 +65,8 @@ android {
             def normalizedWorkingBranch = workingBranch.replaceFirst("^[^A-Za-z]+", "").replaceAll("[^0-9A-Za-z]+", "")
             if (true) {
                 // default values when branch name could not be determined or is master or dev
-                applicationIdSuffix ".debug"
-                resValue "string", "app_name", "PipePipe Debug"
+                applicationIdSuffix ".debug.allfeatures"
+                resValue "string", "app_name", "PipePipe All Features"
             } else {
                 applicationIdSuffix ".debug." + normalizedWorkingBranch
                 resValue "string", "app_name", "PipePipe " + workingBranch

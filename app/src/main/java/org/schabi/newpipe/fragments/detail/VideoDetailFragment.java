@@ -226,6 +226,7 @@ public final class VideoDetailFragment
     private int selectedVideoStreamIndex = -1;
     private long pendingStartupTraceId;
     private BottomSheetBehavior<FrameLayout> bottomSheetBehavior;
+    private boolean returnToActiveItemAfterMiniPlayerDrag;
     private BroadcastReceiver broadcastReceiver;
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -606,7 +607,9 @@ public final class VideoDetailFragment
         } else if (id == R.id.detail_toggle_secondary_controls_view) {
             toggleTitleAndSecondaryControls();
         } else if (id == R.id.overlay_thumbnail || id == R.id.overlay_metadata_layout || id == R.id.overlay_buttons_layout) {
-            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
+            if (!returnToActiveMainPlayerIfBrowsing(true)) {
+                bottomSheetBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
+            }
         } else if (id == R.id.overlay_play_pause_button) {
             if (playerIsNotStopped()) {
                 player.playPause();
@@ -2691,6 +2694,7 @@ public final class VideoDetailFragment
                 try {
                     switch (newState) {
                         case BottomSheetBehavior.STATE_HIDDEN:
+                            returnToActiveItemAfterMiniPlayerDrag = false;
                             moveFocusToMainFragment(true);
                             manageSpaceAtTheBottom(true);
 
@@ -2698,7 +2702,9 @@ public final class VideoDetailFragment
                             cleanUp();
                             break;
                         case BottomSheetBehavior.STATE_EXPANDED:
-                            if (returnToActiveMainPlayerIfBrowsing()) {
+                            final boolean returnToActiveItem = returnToActiveItemAfterMiniPlayerDrag;
+                            returnToActiveItemAfterMiniPlayerDrag = false;
+                            if (returnToActiveItem && returnToActiveMainPlayerIfBrowsing(true)) {
                                 return;
                             }
                             moveFocusToMainFragment(false);
@@ -2726,6 +2732,7 @@ public final class VideoDetailFragment
                             setOverlayLook(binding.appBarLayout, behavior, 1);
                             break;
                         case BottomSheetBehavior.STATE_COLLAPSED:
+                            returnToActiveItemAfterMiniPlayerDrag = false;
                             moveFocusToMainFragment(true);
                             manageSpaceAtTheBottom(false);
 
@@ -2740,6 +2747,8 @@ public final class VideoDetailFragment
                             setOverlayLook(binding.appBarLayout, behavior, 0);
                             break;
                         case BottomSheetBehavior.STATE_DRAGGING:
+                            returnToActiveItemAfterMiniPlayerDrag = true;
+                            // fall through
                         case BottomSheetBehavior.STATE_SETTLING:
                             binding.overlayLayout.setVisibility(View.VISIBLE);
                             if (isPlayerAvailable() && player.isFullscreen()) {
@@ -2782,9 +2791,10 @@ public final class VideoDetailFragment
         });
     }
 
-    private boolean returnToActiveMainPlayerIfBrowsing() {
+    private boolean returnToActiveMainPlayerIfBrowsing(final boolean userInitiatedExpansion) {
         final Relation relation = mainPlayerRelationFor(serviceId, url);
-        if (!MainPlayerQueueBrowsingPolicy.shouldReturnToActiveItemOnPlayerExpansion(relation)) {
+        if (!MainPlayerQueueBrowsingPolicy.shouldReturnToActiveItemOnPlayerExpansion(
+                relation, userInitiatedExpansion)) {
             return false;
         }
 

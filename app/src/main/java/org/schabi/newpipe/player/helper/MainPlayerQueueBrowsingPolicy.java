@@ -29,8 +29,9 @@ public final class MainPlayerQueueBrowsingPolicy {
     }
 
     public static boolean shouldReturnToActiveItemOnPlayerExpansion(
-            @NonNull final Relation relation) {
-        return relation == Relation.OTHER_ITEM;
+            @NonNull final Relation relation,
+            final boolean userInitiatedExpansion) {
+        return userInitiatedExpansion && relation == Relation.OTHER_ITEM;
     }
 
     @NonNull

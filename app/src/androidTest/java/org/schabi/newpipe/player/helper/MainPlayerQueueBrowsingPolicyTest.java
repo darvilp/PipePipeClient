@@ -58,11 +58,13 @@ public final class MainPlayerQueueBrowsingPolicyTest {
     @Test
     public void expandingPlayerReturnsFromBrowsedDetailsToActiveQueueItem() {
         assertTrue(MainPlayerQueueBrowsingPolicy.shouldReturnToActiveItemOnPlayerExpansion(
-                OTHER_ITEM));
+                OTHER_ITEM, true));
         assertFalse(MainPlayerQueueBrowsingPolicy.shouldReturnToActiveItemOnPlayerExpansion(
-                ACTIVE_ITEM));
+                ACTIVE_ITEM, true));
         assertFalse(MainPlayerQueueBrowsingPolicy.shouldReturnToActiveItemOnPlayerExpansion(
-                NO_ACTIVE_MAIN_QUEUE));
+                NO_ACTIVE_MAIN_QUEUE, true));
+        assertFalse(MainPlayerQueueBrowsingPolicy.shouldReturnToActiveItemOnPlayerExpansion(
+                OTHER_ITEM, false));
     }
 
     @Test

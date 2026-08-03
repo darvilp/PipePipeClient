@@ -28,6 +28,11 @@ public final class MainPlayerQueueBrowsingPolicy {
         return relation == Relation.OTHER_ITEM;
     }
 
+    public static boolean shouldReturnToActiveItemOnPlayerExpansion(
+            @NonNull final Relation relation) {
+        return relation == Relation.OTHER_ITEM;
+    }
+
     @NonNull
     public static Relation classify(@Nullable final PlayerType playerType,
                                     final boolean switchingPlayers,

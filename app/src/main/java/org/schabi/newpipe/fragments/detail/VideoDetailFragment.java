@@ -2698,6 +2698,9 @@ public final class VideoDetailFragment
                             cleanUp();
                             break;
                         case BottomSheetBehavior.STATE_EXPANDED:
+                            if (returnToActiveMainPlayerIfBrowsing()) {
+                                return;
+                            }
                             moveFocusToMainFragment(false);
                             manageSpaceAtTheBottom(false);
 
@@ -2777,6 +2780,23 @@ public final class VideoDetailFragment
             }
 
         });
+    }
+
+    private boolean returnToActiveMainPlayerIfBrowsing() {
+        final Relation relation = mainPlayerRelationFor(serviceId, url);
+        if (!MainPlayerQueueBrowsingPolicy.shouldReturnToActiveItemOnPlayerExpansion(relation)) {
+            return false;
+        }
+
+        @Nullable final PlayQueueItem activeItem = playerHolder.getCurrentQueueItem();
+        if (activeItem == null) {
+            return false;
+        }
+
+        NavigationHelper.openVideoDetailFragment(
+                requireContext(), getFM(), activeItem.getServiceId(), activeItem.getUrl(),
+                activeItem.getTitle(), null, false);
+        return true;
     }
 
     static boolean isStableBottomSheetState(final int state) {

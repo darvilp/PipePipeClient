@@ -56,6 +56,16 @@ public final class MainPlayerQueueBrowsingPolicyTest {
     }
 
     @Test
+    public void expandingPlayerReturnsFromBrowsedDetailsToActiveQueueItem() {
+        assertTrue(MainPlayerQueueBrowsingPolicy.shouldReturnToActiveItemOnPlayerExpansion(
+                OTHER_ITEM));
+        assertFalse(MainPlayerQueueBrowsingPolicy.shouldReturnToActiveItemOnPlayerExpansion(
+                ACTIVE_ITEM));
+        assertFalse(MainPlayerQueueBrowsingPolicy.shouldReturnToActiveItemOnPlayerExpansion(
+                NO_ACTIVE_MAIN_QUEUE));
+    }
+
+    @Test
     public void popupAndBackgroundPlayersAreUnchanged() {
         assertEquals(NO_ACTIVE_MAIN_QUEUE, MainPlayerQueueBrowsingPolicy.classify(
                 PlayerType.POPUP, false, 0, "https://example.com/active",

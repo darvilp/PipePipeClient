@@ -22,7 +22,8 @@ public abstract class ItemDragTouchHelperCallback extends ItemTouchHelper.Simple
                                             final int totalSize,
                                             final long msSinceStartScroll) {
         final long initialRampElapsedMs =
-                ItemDragScrollPolicy.initialRampElapsedForAndroidX(msSinceStartScroll);
+                dragScrollPolicy.initialRampElapsedForAndroidX(
+                        msSinceStartScroll, Integer.signum(viewSizeOutOfBounds));
         final int standardSpeed = super.interpolateOutOfBoundsScroll(recyclerView, viewSize,
                 viewSizeOutOfBounds, totalSize, initialRampElapsedMs);
         final Display display = recyclerView.getDisplay();
@@ -46,7 +47,7 @@ public abstract class ItemDragTouchHelperCallback extends ItemTouchHelper.Simple
     public void onSelectedChanged(final RecyclerView.ViewHolder viewHolder,
                                   final int actionState) {
         super.onSelectedChanged(viewHolder, actionState);
-        dragScrollPolicy.resetExpeditedScroll();
+        dragScrollPolicy.resetScroll();
 
         if (actionState == ItemTouchHelper.ACTION_STATE_DRAG && viewHolder != null
                 && viewHolder.itemView.getParent() instanceof ItemDragRecyclerView) {

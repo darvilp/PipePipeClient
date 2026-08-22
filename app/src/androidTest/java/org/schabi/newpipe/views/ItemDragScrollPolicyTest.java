@@ -70,6 +70,38 @@ public class ItemDragScrollPolicyTest {
     }
 
     @Test
+    public void restartsTheInitialRampAfterChangingDirection() {
+        final ItemDragScrollPolicy policy = new ItemDragScrollPolicy();
+
+        assertEquals(0L, policy.initialRampElapsedForAndroidX(0L, -1));
+        assertEquals(2_000L, policy.initialRampElapsedForAndroidX(500L, -1));
+        assertEquals(0L, policy.initialRampElapsedForAndroidX(700L, 1));
+        assertEquals(1_000L, policy.initialRampElapsedForAndroidX(950L, 1));
+    }
+
+    @Test
+    public void restartsTheInitialRampWhenEdgeScrollingRestarts() {
+        final ItemDragScrollPolicy policy = new ItemDragScrollPolicy();
+
+        assertEquals(0L, policy.initialRampElapsedForAndroidX(0L, 1));
+        assertEquals(2_000L, policy.initialRampElapsedForAndroidX(500L, 1));
+        assertEquals(0L, policy.initialRampElapsedForAndroidX(0L, 1));
+        assertEquals(1_000L, policy.initialRampElapsedForAndroidX(250L, 1));
+    }
+
+    @Test
+    public void explicitResetRestartsTheInitialRamp() {
+        final ItemDragScrollPolicy policy = new ItemDragScrollPolicy();
+
+        assertEquals(0L, policy.initialRampElapsedForAndroidX(0L, 1));
+        assertEquals(2_000L, policy.initialRampElapsedForAndroidX(500L, 1));
+
+        policy.resetScroll();
+
+        assertEquals(0L, policy.initialRampElapsedForAndroidX(500L, 1));
+    }
+
+    @Test
     public void keepsTheNormalCapDuringTheExpeditedDelay() {
         final ItemDragScrollPolicy policy = new ItemDragScrollPolicy();
 

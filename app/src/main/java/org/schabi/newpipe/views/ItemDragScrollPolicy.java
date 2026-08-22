@@ -14,6 +14,9 @@ final class ItemDragScrollPolicy {
     private long normalCapReachedAtMs = UNSET_TIME_MS;
     private long lastScrollDurationMs = UNSET_TIME_MS;
     private int lastDirection;
+    private long initialRampStartedAtMs = UNSET_TIME_MS;
+    private long lastInitialRampElapsedMs = UNSET_TIME_MS;
+    private int initialRampDirection;
 
     static int capScrollSpeed(final int standardSpeed, final int itemSizePx,
                               final int itemsPerRow, final float refreshRateHz) {
@@ -33,6 +36,26 @@ final class ItemDragScrollPolicy {
         }
 
         return elapsedMs * ANDROIDX_SCROLL_RAMP_MS / INITIAL_SCROLL_RAMP_MS;
+    }
+
+    long initialRampElapsedForAndroidX(final long elapsedMs, final int direction) {
+        final long safeElapsedMs = Math.max(0L, elapsedMs);
+        final int safeDirection = Integer.signum(direction);
+        final boolean edgeScrollingRestarted = lastInitialRampElapsedMs != UNSET_TIME_MS
+                && safeElapsedMs < lastInitialRampElapsedMs;
+        final boolean directionChanged = initialRampDirection != 0
+                && safeDirection != initialRampDirection;
+
+        if (initialRampStartedAtMs == UNSET_TIME_MS
+                || edgeScrollingRestarted
+                || directionChanged) {
+            initialRampStartedAtMs = safeElapsedMs;
+        }
+
+        lastInitialRampElapsedMs = safeElapsedMs;
+        initialRampDirection = safeDirection;
+
+        return initialRampElapsedForAndroidX(safeElapsedMs - initialRampStartedAtMs);
     }
 
     int applyScrollSpeed(final int standardSpeed, final int itemSizePx,
@@ -80,6 +103,13 @@ final class ItemDragScrollPolicy {
         normalCapReachedAtMs = UNSET_TIME_MS;
         lastScrollDurationMs = UNSET_TIME_MS;
         lastDirection = 0;
+    }
+
+    void resetScroll() {
+        initialRampStartedAtMs = UNSET_TIME_MS;
+        lastInitialRampElapsedMs = UNSET_TIME_MS;
+        initialRampDirection = 0;
+        resetExpeditedScroll();
     }
 
     private static int capScrollSpeed(final int standardSpeed,

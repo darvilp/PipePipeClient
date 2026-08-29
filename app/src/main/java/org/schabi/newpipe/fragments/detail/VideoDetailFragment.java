@@ -90,6 +90,9 @@ import org.schabi.newpipe.player.Player;
 import org.schabi.newpipe.player.PlaybackStartupTrace;
 import org.schabi.newpipe.player.event.OnKeyDownListener;
 import org.schabi.newpipe.player.event.PlayerServiceExtendedEventListener;
+import org.schabi.newpipe.player.helper.MainPlayerQueueActionPolicy;
+import org.schabi.newpipe.player.helper.MainPlayerQueueActionPolicy.Action;
+import org.schabi.newpipe.player.helper.MainPlayerQueueActionPolicy.QueueSnapshot;
 import org.schabi.newpipe.player.helper.MainPlayerQueueBrowsingPolicy;
 import org.schabi.newpipe.player.helper.MainPlayerQueueBrowsingPolicy.Relation;
 import org.schabi.newpipe.player.helper.PlayerHelper;
@@ -594,16 +597,7 @@ public final class VideoDetailFragment
                         currentInfo.getSubChannelName());
             }
         } else if (id == R.id.detail_thumbnail_root_layout) {
-            if (currentInfo != null) {
-                pendingStartupTraceId = PlaybackStartupTrace.begin(
-                        currentInfo.getId(), currentInfo.getUrl());
-            }
-            autoPlayEnabled = true; // forcefully start playing
-            // FIXME Workaround #7427
-            if (isPlayerAvailable()) {
-                player.setRecovery();
-            }
-            openVideoPlayerAutoFullscreen();
+            handleMainPlayerPlayFromDetails();
         } else if (id == R.id.detail_toggle_secondary_controls_view) {
             toggleTitleAndSecondaryControls();
         } else if (id == R.id.overlay_thumbnail || id == R.id.overlay_metadata_layout || id == R.id.overlay_buttons_layout) {
@@ -1394,6 +1388,11 @@ public final class VideoDetailFragment
      *                                       in landscape and screen orientation is locked
      */
     public void openVideoPlayer(final boolean directlyFullscreenIfApplicable) {
+        prepareMainPlayerUi(directlyFullscreenIfApplicable);
+        openMainPlayer();
+    }
+
+    private void prepareMainPlayerUi(final boolean directlyFullscreenIfApplicable) {
         if (directlyFullscreenIfApplicable
                 && !DeviceUtils.isLandscape(requireContext())
                 && PlayerHelper.globalScreenOrientationLocked(requireContext())) {
@@ -1408,8 +1407,6 @@ public final class VideoDetailFragment
             // toggle landscape in order to open directly in fullscreen
             onScreenRotationButtonClicked();
         }
-
-        openMainPlayer();
     }
 
     /**
@@ -1422,6 +1419,131 @@ public final class VideoDetailFragment
      */
     public void openVideoPlayerAutoFullscreen() {
         openVideoPlayer(PlayerHelper.isStartMainPlayerFullscreenEnabled(requireContext()));
+    }
+
+    private void handleMainPlayerPlayFromDetails() {
+        if (currentInfo == null) {
+            return;
+        }
+
+        @Nullable final PlayQueue activeQueue =
+                isPlayerAvailable() ? player.getPlayQueue() : null;
+        final Relation relation = mainPlayerRelationFor(
+                currentInfo.getServiceId(), currentInfo.getOriginalUrl());
+        final boolean shouldShowQueueActions = MainPlayerQueueActionPolicy.shouldShowDialog(
+                relation,
+                !isPlayerAvailable() || player.isStopped(),
+                activeQueue == null ? 0 : activeQueue.size());
+
+        if (!shouldShowQueueActions) {
+            replaceQueueAndPlayDisplayedVideo();
+            return;
+        }
+
+        @Nullable final QueueSnapshot queueSnapshot =
+                MainPlayerQueueActionPolicy.snapshotOf(activeQueue);
+        if (queueSnapshot == null) {
+            replaceQueueAndPlayDisplayedVideo();
+            return;
+        }
+
+        showMainPlayerQueueActionDialog(currentInfo, queueSnapshot);
+    }
+
+    private void showMainPlayerQueueActionDialog(@NonNull final StreamInfo targetInfo,
+                                                  @NonNull final QueueSnapshot queueSnapshot) {
+        final CharSequence[] actions = {
+                getString(R.string.main_player_queue_action_play_now),
+                getString(R.string.main_player_queue_action_add_to_end),
+                getString(R.string.main_player_queue_action_replace)
+        };
+
+        new AlertDialog.Builder(activity)
+                .setTitle(R.string.main_player_queue_action_title)
+                .setItems(actions, (dialog, index) -> handleMainPlayerQueueAction(
+                        MainPlayerQueueActionPolicy.actionAt(index), targetInfo, queueSnapshot))
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    private void handleMainPlayerQueueAction(@NonNull final Action action,
+                                             @NonNull final StreamInfo targetInfo,
+                                             @NonNull final QueueSnapshot queueSnapshot) {
+        if (!isMainPlayerQueueActionStillValid(targetInfo, queueSnapshot)) {
+            if (isAdded()) {
+                Toast.makeText(requireContext(), R.string.main_player_queue_changed,
+                        Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+
+        switch (action) {
+            case PLAY_NOW_KEEP_QUEUE:
+                playDisplayedVideoNextInQueue(targetInfo);
+                break;
+            case ADD_TO_END:
+                NavigationHelper.enqueueOnPlayer(
+                        activity, new SinglePlayQueue(targetInfo), PlayerType.VIDEO);
+                break;
+            case REPLACE_QUEUE:
+                replaceQueueAndPlayDisplayedVideo();
+                break;
+        }
+    }
+
+    private boolean isMainPlayerQueueActionStillValid(
+            @NonNull final StreamInfo targetInfo,
+            @NonNull final QueueSnapshot queueSnapshot) {
+        if (!isAdded() || currentInfo != targetInfo || !isPlayerAvailable()) {
+            return false;
+        }
+
+        @Nullable final PlayQueue currentQueue = player.getPlayQueue();
+        return queueSnapshot.matches(currentQueue)
+                && MainPlayerQueueActionPolicy.shouldShowDialog(
+                        mainPlayerRelationFor(
+                                targetInfo.getServiceId(), targetInfo.getOriginalUrl()),
+                        player.isStopped(),
+                        currentQueue == null ? 0 : currentQueue.size());
+    }
+
+    private void replaceQueueAndPlayDisplayedVideo() {
+        if (currentInfo == null) {
+            return;
+        }
+
+        beginMainPlayerPlayback(currentInfo);
+        // FIXME Workaround #7427
+        if (isPlayerAvailable()) {
+            player.setRecovery();
+        }
+        openVideoPlayerAutoFullscreen();
+    }
+
+    private void playDisplayedVideoNextInQueue(@NonNull final StreamInfo targetInfo) {
+        beginMainPlayerPlayback(targetInfo);
+        // Save the current item's position before the queue selection changes.
+        player.setRecovery();
+        prepareMainPlayerUi(PlayerHelper.isStartMainPlayerFullscreenEnabled(requireContext()));
+
+        final PlayQueue queue = new SinglePlayQueue(targetInfo);
+        PlaybackStartupTrace.mark(pendingStartupTraceId, "play_queue_ready");
+        if (playerService.getView() != null) {
+            playerService.getView().setVisibility(View.GONE);
+        }
+        addVideoPlayerView();
+
+        final Intent playerIntent = NavigationHelper.getPlayerEnqueueNextAndPlayIntent(
+                requireContext(), DeviceUtils.getPlayerServiceClass(), queue);
+        playerIntent.putExtra(Player.PLAYER_TYPE, PlayerType.VIDEO.ordinal());
+        PlaybackStartupTrace.attach(playerIntent, pendingStartupTraceId);
+        ContextCompat.startForegroundService(activity, playerIntent);
+    }
+
+    private void beginMainPlayerPlayback(@NonNull final StreamInfo targetInfo) {
+        pendingStartupTraceId = PlaybackStartupTrace.begin(
+                targetInfo.getId(), targetInfo.getUrl());
+        autoPlayEnabled = true;
     }
 
     private void openNormalBackgroundPlayer(final boolean append) {

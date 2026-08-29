@@ -210,6 +210,7 @@ public final class Player implements
     public static final String PLAY_QUEUE_KEY = "play_queue_key";
     public static final String ENQUEUE = "enqueue";
     public static final String ENQUEUE_NEXT = "enqueue_next";
+    public static final String ENQUEUE_NEXT_AND_PLAY = "enqueue_next_and_play";
     public static final String RESUME_PLAYBACK = "resume_playback";
     public static final String PLAY_WHEN_READY = "play_when_ready";
     public static final String PLAYER_TYPE = "player_type";
@@ -784,6 +785,20 @@ public final class Player implements
             return;
         }
 
+        if (intent.getBooleanExtra(ENQUEUE_NEXT_AND_PLAY, false) && playQueue != null) {
+            final PlayQueueItem itemToPlay = newQueue.getItem();
+            if (itemToPlay == null) {
+                return;
+            }
+
+            saveStreamProgressState();
+            playQueue.insertNextAndSelect(itemToPlay);
+            // Synchronize the detail fragment with the selected queue before playback resumes.
+            notifyQueueUpdateToListeners();
+            play();
+            return;
+        }
+
 //        if (intent.hasExtra(PLAYBACK_QUALITY)) {
 //            setPlaybackQuality(intent.getStringExtra(PLAYBACK_QUALITY));
 //        }
@@ -1077,7 +1092,10 @@ public final class Player implements
     }
 
     public void setRecovery() {
-        if (playQueue == null || exoPlayerIsNull()) {
+        if (playQueue == null || exoPlayerIsNull()
+                || playQueue.getIndex() != simpleExoPlayer.getCurrentMediaItemIndex()) {
+            // The queue selection may change before ExoPlayer updates its timeline. Saving during
+            // that window would assign the previous item's position to the newly selected item.
             return;
         }
 

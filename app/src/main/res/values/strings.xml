@@ -380,6 +380,11 @@
 <string name="play_queue_remove">Remove</string>
 <string name="play_queue_stream_detail">Details</string>
 <string name="play_queue_audio_settings">Audio Settings</string>
+<string name="main_player_queue_action_title">Play this video</string>
+<string name="main_player_queue_action_play_now">Play now and keep queue</string>
+<string name="main_player_queue_action_add_to_end">Add to end of queue</string>
+<string name="main_player_queue_action_replace">Replace queue and play</string>
+<string name="main_player_queue_changed">Queue changed; press Play again</string>
 <string name="hold_to_append">Hold to enqueue</string>
 <string name="show_channel_details">Show channel details</string>
 <string name="enqueue_stream">Enqueue</string>

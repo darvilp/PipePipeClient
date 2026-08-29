@@ -132,6 +132,15 @@ public final class NavigationHelper {
                 .putExtra(Player.ENQUEUE_NEXT, true);
     }
 
+    @NonNull
+    public static <T> Intent getPlayerEnqueueNextAndPlayIntent(
+            @NonNull final Context context,
+            @NonNull final Class<T> targetClazz,
+            @Nullable final PlayQueue playQueue) {
+        return getPlayerIntent(context, targetClazz, playQueue, false)
+                .putExtra(Player.ENQUEUE_NEXT_AND_PLAY, true);
+    }
+
     /* PLAY */
     public static void playOnMainPlayer(final AppCompatActivity activity,
                                         @NonNull final PlayQueue playQueue) {

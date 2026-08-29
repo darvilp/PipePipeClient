@@ -783,11 +783,6 @@ public final class Player implements
             return;
         }
 
-        final PlayerType oldPlayerType = playerType;
-        playerType = retrievePlayerTypeFromIntent(intent);
-        // We need to setup audioOnly before super(), see "sourceOf"
-        isAudioOnly = audioPlayerSelected();
-
 //        if (intent.hasExtra(PLAYBACK_QUALITY)) {
 //            setPlaybackQuality(intent.getStringExtra(PLAYBACK_QUALITY));
 //        }
@@ -804,6 +799,11 @@ public final class Player implements
             playQueue.move(playQueue.size() - 1, currentIndex + 1);
             return;
         }
+
+        final PlayerType oldPlayerType = playerType;
+        playerType = retrievePlayerTypeFromIntent(intent);
+        // We need to setup audioOnly before super(), see "sourceOf"
+        isAudioOnly = audioPlayerSelected();
 
         final DefaultTrackSelector.Parameters.Builder parametersBuilder =
                 trackSelector.buildUponParameters();

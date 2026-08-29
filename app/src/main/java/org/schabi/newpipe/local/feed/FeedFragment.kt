@@ -332,6 +332,18 @@ class FeedFragment : BaseStateFragment<FeedState>() {
             }
 
             // Long click listeners for enqueue functionality
+            binding.playlistCtrlPlayAllButton.setOnLongClickListener {
+                val playQueue = getPlayQueue()
+                if (playQueue.streams.isNotEmpty()) {
+                    NavigationHelper.enqueueOnPlayer(
+                        activity,
+                        playQueue,
+                        PlayerService.PlayerType.VIDEO
+                    )
+                }
+                true
+            }
+
             binding.playlistCtrlPlayPopupButton.setOnLongClickListener {
                 val playQueue = getPlayQueue()
                 if (playQueue.streams.isNotEmpty()) {
@@ -439,6 +451,7 @@ class FeedFragment : BaseStateFragment<FeedState>() {
             binding.playlistCtrlPlayAllButton.setOnClickListener(null)
             binding.playlistCtrlPlayPopupButton.setOnClickListener(null)
             binding.playlistCtrlPlayBgButton.setOnClickListener(null)
+            binding.playlistCtrlPlayAllButton.setOnLongClickListener(null)
             binding.playlistCtrlPlayPopupButton.setOnLongClickListener(null)
             binding.playlistCtrlPlayBgButton.setOnLongClickListener(null)
         }

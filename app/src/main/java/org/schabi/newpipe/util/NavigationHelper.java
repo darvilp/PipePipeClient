@@ -194,8 +194,16 @@ public final class NavigationHelper {
     /* ENQUEUE */
     public static void enqueueOnPlayer(final Context context,
                                        final PlayQueue queue,
-                                       final PlayerType playerType) {
-        if ((playerType == PlayerType.POPUP) && !PermissionHelper.isPopupEnabled(context)) {
+                                       final PlayerType fallbackPlayerType) {
+        final PlayerHolder playerHolder = PlayerHolder.getInstance();
+        final boolean playQueueReady = playerHolder.isPlayQueueReady();
+        final PlayerType playerType = resolveEnqueuePlayerType(
+                fallbackPlayerType,
+                playerHolder.getType(),
+                playQueueReady);
+
+        if (shouldRequirePopupPermission(playerType, playQueueReady)
+                && !PermissionHelper.isPopupEnabled(context)) {
             PermissionHelper.showPopupEnablementToast(context);
             return;
         }
@@ -208,13 +216,26 @@ public final class NavigationHelper {
     }
 
     public static void enqueueOnPlayer(final Context context, final PlayQueue queue) {
-        PlayerType playerType = PlayerHolder.getInstance().getType();
-        if (!PlayerHolder.getInstance().isPlayerOpen()) {
-            Log.e(TAG, "Enqueueing but no player is open; defaulting to background player");
-            playerType = PlayerService.PlayerType.AUDIO;
+        if (!PlayerHolder.getInstance().isPlayQueueReady()) {
+            Log.e(TAG, "Enqueueing but no play queue is ready; defaulting to background player");
         }
 
-        enqueueOnPlayer(context, queue, playerType);
+        enqueueOnPlayer(context, queue, PlayerService.PlayerType.AUDIO);
+    }
+
+    static PlayerType resolveEnqueuePlayerType(final PlayerType fallbackPlayerType,
+                                               @Nullable final PlayerType currentPlayerType,
+                                               final boolean playQueueReady) {
+        if (playQueueReady && currentPlayerType != null) {
+            return currentPlayerType;
+        }
+
+        return fallbackPlayerType;
+    }
+
+    static boolean shouldRequirePopupPermission(final PlayerType playerType,
+                                                final boolean playQueueReady) {
+        return !playQueueReady && playerType == PlayerType.POPUP;
     }
 
     /* ENQUEUE NEXT */

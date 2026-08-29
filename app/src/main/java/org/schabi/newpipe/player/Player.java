@@ -291,6 +291,7 @@ public final class Player implements
     private boolean isFullscreen = false;
     private boolean isVerticalVideo = false;
     private boolean fragmentIsVisible = false;
+    private boolean mainPlayerDetailsBrowsing = false;
     private long startupTraceId;
 
     private boolean isFullscreenGestureEnabled = true;
@@ -804,6 +805,7 @@ public final class Player implements
         playerType = retrievePlayerTypeFromIntent(intent);
         // We need to setup audioOnly before super(), see "sourceOf"
         isAudioOnly = audioPlayerSelected();
+        mainPlayerDetailsBrowsing = false;
 
         final DefaultTrackSelector.Parameters.Builder parametersBuilder =
                 trackSelector.buildUponParameters();
@@ -1407,7 +1409,7 @@ public final class Player implements
                 break;
             case VideoDetailFragment.ACTION_VIDEO_FRAGMENT_RESUMED:
                 fragmentIsVisible = true;
-                useVideoSource(true);
+                useVideoSource(!mainPlayerDetailsBrowsing);
                 break;
             case VideoDetailFragment.ACTION_VIDEO_FRAGMENT_STOPPED:
                 fragmentIsVisible = false;
@@ -5297,6 +5299,20 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
                     pause();
                     break;
             }
+        }
+    }
+
+    /**
+     * Keeps a main-player queue running without its video surface while another stream's details
+     * are being browsed. This is distinct from leaving the app: the existing minimize-on-exit
+     * preference still controls that transition.
+     *
+     * @param browsing whether another stream's details are currently displayed
+     */
+    public void setMainPlayerDetailsBrowsing(final boolean browsing) {
+        mainPlayerDetailsBrowsing = browsing;
+        if (videoPlayerSelected()) {
+            useVideoSource(!browsing);
         }
     }
 

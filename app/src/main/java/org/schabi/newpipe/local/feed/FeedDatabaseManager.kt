@@ -9,14 +9,19 @@ import io.reactivex.rxjava3.core.Maybe
 import io.reactivex.rxjava3.schedulers.Schedulers
 import org.schabi.newpipe.MainActivity.DEBUG
 import org.schabi.newpipe.NewPipeDatabase
+import org.schabi.newpipe.database.feed.model.FeedContentSelection
 import org.schabi.newpipe.database.feed.model.FeedEntity
+import org.schabi.newpipe.database.feed.model.FeedGroupContentRules
 import org.schabi.newpipe.database.feed.model.FeedGroupEntity
+import org.schabi.newpipe.database.feed.model.FeedGroupSubscriptionEntity
 import org.schabi.newpipe.database.feed.model.FeedLastUpdatedEntity
 import org.schabi.newpipe.database.stream.StreamWithState
 import org.schabi.newpipe.database.stream.model.StreamEntity
 import org.schabi.newpipe.database.subscription.NotificationMode
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.stream.StreamType
+import org.schabi.newpipe.local.feed.service.FeedContentClassifier
+import org.schabi.newpipe.local.feed.service.FeedStreamItem
 import org.schabi.newpipe.local.subscription.FeedGroupIcon
 import java.time.LocalDate
 import java.time.OffsetDateTime
@@ -87,13 +92,30 @@ class FeedDatabaseManager(context: Context) {
         items: List<StreamInfoItem>,
         oldestAllowedDate: OffsetDateTime = FEED_OLDEST_ALLOWED_DATE
     ) {
-        val itemsToInsert = ArrayList<StreamInfoItem>()
-        loop@ for (streamItem in items) {
+        upsertAllWithContent(
+            subscriptionId,
+            items.map { FeedStreamItem(it, FeedContentClassifier.fromStream(it)) },
+            oldestAllowedDate
+        )
+    }
+
+    fun upsertAllWithContent(
+        subscriptionId: Long,
+        items: List<FeedStreamItem>,
+        oldestAllowedDate: OffsetDateTime = FEED_OLDEST_ALLOWED_DATE
+    ) {
+        val itemsToInsert = ArrayList<FeedStreamItem>()
+        loop@ for (feedStreamItem in FeedContentClassifier.mergeDuplicates(items)) {
+            val streamItem = feedStreamItem.stream
             val uploadDate = streamItem.uploadDate
 
             itemsToInsert += when {
-                uploadDate == null && streamItem.streamType == StreamType.LIVE_STREAM -> streamItem
-                uploadDate != null && uploadDate.offsetDateTime() >= oldestAllowedDate -> streamItem
+                uploadDate == null && streamItem.streamType == StreamType.LIVE_STREAM -> {
+                    feedStreamItem
+                }
+                uploadDate != null && uploadDate.offsetDateTime() >= oldestAllowedDate -> {
+                    feedStreamItem
+                }
                 else -> continue@loop
             }
         }
@@ -101,16 +123,22 @@ class FeedDatabaseManager(context: Context) {
         feedTable.unlinkOldLivestreams(subscriptionId)
 
         if (itemsToInsert.isNotEmpty()) {
-                // if item.uploaderName is null, write it as "Unknown"
-                for (item in itemsToInsert) {
-                    if (item.uploaderName == null) {
-                        item.uploaderName = "Unknown"
-                    }
+            // if item.uploaderName is null, write it as "Unknown"
+            for ((item) in itemsToInsert) {
+                if (item.uploaderName == null) {
+                    item.uploaderName = "Unknown"
                 }
-                val streamEntities = itemsToInsert.map { StreamEntity(it) }
-                val streamIds = streamTable.upsertAll(streamEntities)
-                val feedEntities = streamIds.map { FeedEntity(it, subscriptionId) }
-                feedTable.insertAll(feedEntities)
+            }
+            val streamEntities = itemsToInsert.map { StreamEntity(it.stream) }
+            val streamIds = streamTable.upsertAll(streamEntities)
+            val feedEntities = streamIds.mapIndexed { index, streamId ->
+                FeedEntity(
+                    streamId,
+                    subscriptionId,
+                    itemsToInsert[index].contentSelection
+                )
+            }
+            feedTable.upsertAll(feedEntities)
         }
 
         feedTable.setLastUpdatedForSubscription(
@@ -144,6 +172,12 @@ class FeedDatabaseManager(context: Context) {
             .observeOn(AndroidSchedulers.mainThread())
     }
 
+    fun subscriptionsForGroup(groupId: Long): Flowable<List<FeedGroupSubscriptionEntity>> {
+        return feedGroupTable.getSubscriptionsForGroup(groupId)
+            .subscribeOn(Schedulers.io())
+            .observeOn(AndroidSchedulers.mainThread())
+    }
+
     fun updateSubscriptionsForGroup(groupId: Long, subscriptionIds: List<Long>): Completable {
         return Completable
             .fromCallable { feedGroupTable.updateSubscriptionsForGroup(groupId, subscriptionIds) }
@@ -157,6 +191,31 @@ class FeedDatabaseManager(context: Context) {
             .observeOn(AndroidSchedulers.mainThread())
     }
 
+    fun createGroupWithContentRules(
+        name: String,
+        icon: FeedGroupIcon,
+        contentSelection: FeedContentSelection,
+        subscriptionIds: Set<Long>,
+        contentSelectionOverrides: Map<Long, FeedContentSelection>
+    ): Completable {
+        return Completable.fromAction {
+            database.runInTransaction {
+                val groupId = feedGroupTable.insert(
+                    FeedGroupEntity(0, name, icon, contentSelection = contentSelection)
+                )
+                feedGroupTable.updateContentRulesForGroup(
+                    groupId,
+                    subscriptionIds,
+                    FeedGroupContentRules.normalizeOverrides(
+                        contentSelection,
+                        subscriptionIds,
+                        contentSelectionOverrides
+                    )
+                )
+            }
+        }.subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread())
+    }
+
     fun getGroup(groupId: Long): Maybe<FeedGroupEntity> {
         return feedGroupTable.getGroup(groupId)
             .subscribeOn(Schedulers.io())
@@ -167,6 +226,27 @@ class FeedDatabaseManager(context: Context) {
         return Completable.fromCallable { feedGroupTable.update(feedGroupEntity) }
             .subscribeOn(Schedulers.io())
             .observeOn(AndroidSchedulers.mainThread())
+    }
+
+    fun updateGroupWithContentRules(
+        feedGroupEntity: FeedGroupEntity,
+        subscriptionIds: Set<Long>,
+        contentSelectionOverrides: Map<Long, FeedContentSelection>
+    ): Completable {
+        return Completable.fromAction {
+            database.runInTransaction {
+                feedGroupTable.updateContentRulesForGroup(
+                    feedGroupEntity.uid,
+                    subscriptionIds,
+                    FeedGroupContentRules.normalizeOverrides(
+                        feedGroupEntity.contentSelection,
+                        subscriptionIds,
+                        contentSelectionOverrides
+                    )
+                )
+                feedGroupTable.update(feedGroupEntity)
+            }
+        }.subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread())
     }
 
     fun deleteGroup(groupId: Long): Completable {

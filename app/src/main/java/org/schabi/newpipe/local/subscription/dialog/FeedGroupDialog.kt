@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.getSystemService
 import androidx.core.os.bundleOf
 import androidx.core.view.isGone
@@ -22,11 +23,18 @@ import com.xwray.groupie.GroupieAdapter
 import com.xwray.groupie.OnItemClickListener
 import com.xwray.groupie.Section
 import org.schabi.newpipe.R
+import org.schabi.newpipe.database.feed.model.FeedContentSelection
+import org.schabi.newpipe.database.feed.model.FeedContentType
+import org.schabi.newpipe.database.feed.model.FeedGroupContentRules
 import org.schabi.newpipe.database.feed.model.FeedGroupEntity
+import org.schabi.newpipe.database.feed.model.FeedGroupSubscriptionEntity
 import org.schabi.newpipe.databinding.DialogFeedGroupCreateBinding
+import org.schabi.newpipe.databinding.FeedGroupContentRuleItemBinding
 import org.schabi.newpipe.databinding.ToolbarSearchLayoutBinding
 import org.schabi.newpipe.fragments.BackPressable
 import org.schabi.newpipe.local.subscription.FeedGroupIcon
+import org.schabi.newpipe.local.subscription.dialog.FeedGroupDialog.ScreenState.ContentRuleSubscriptionsScreen
+import org.schabi.newpipe.local.subscription.dialog.FeedGroupDialog.ScreenState.ContentRulesScreen
 import org.schabi.newpipe.local.subscription.dialog.FeedGroupDialog.ScreenState.DeleteScreen
 import org.schabi.newpipe.local.subscription.dialog.FeedGroupDialog.ScreenState.IconPickerScreen
 import org.schabi.newpipe.local.subscription.dialog.FeedGroupDialog.ScreenState.InitialScreen
@@ -56,12 +64,20 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
         object InitialScreen : ScreenState()
         object IconPickerScreen : ScreenState()
         object SubscriptionsPickerScreen : ScreenState()
+        object ContentRulesScreen : ScreenState()
+        object ContentRuleSubscriptionsScreen : ScreenState()
         object DeleteScreen : ScreenState()
     }
 
     @JvmField var selectedIcon: FeedGroupIcon? = null
     @JvmField var selectedSubscriptions: HashSet<Long> = HashSet()
     @JvmField var wasSubscriptionSelectionChanged: Boolean = false
+    @JvmField var selectedContentSelectionMask: Int = FeedContentSelection.ALL.mask
+    @JvmField var contentSelectionOverrides: HashMap<Long, Int> = HashMap()
+    @JvmField var wasContentRulesChanged: Boolean = false
+    @JvmField var editingContentSelectionMask: Int = 0
+    @JvmField var editingRuleOriginalSubscriptions: HashSet<Long> = HashSet()
+    @JvmField var editingRuleSelectedSubscriptions: HashSet<Long> = HashSet()
     @JvmField var currentScreen: ScreenState = InitialScreen
 
     @JvmField var subscriptionsListState: Parcelable? = null
@@ -73,6 +89,7 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
     private val subscriptionMainSection = Section()
     private val subscriptionEmptyFooter = Section()
     private lateinit var subscriptionGroupAdapter: GroupieAdapter
+    private var latestSubscriptions: List<PickerSubscriptionItem> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,6 +97,35 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
             selectedIcon = savedInstanceState.getString("selectedIcon")?.let { FeedGroupIcon.valueOf(it) }
             selectedSubscriptions = HashSet(savedInstanceState.getLongArray("selectedSubscriptions")?.toList() ?: emptyList())
             wasSubscriptionSelectionChanged = savedInstanceState.getBoolean("wasSubscriptionSelectionChanged", false)
+            selectedContentSelectionMask = savedInstanceState.getInt(
+                "selectedContentSelectionMask",
+                FeedContentSelection.ALL.mask
+            )
+            contentSelectionOverrides = HashMap<Long, Int>().apply {
+                val subscriptionIds = savedInstanceState.getLongArray("contentOverrideIds")
+                    ?: longArrayOf()
+                val selectionMasks = savedInstanceState.getIntArray("contentOverrideMasks")
+                    ?: intArrayOf()
+                subscriptionIds.zip(selectionMasks.toTypedArray()).forEach { (id, mask) ->
+                    put(id, mask)
+                }
+            }
+            wasContentRulesChanged = savedInstanceState.getBoolean(
+                "wasContentRulesChanged",
+                false
+            )
+            editingContentSelectionMask = savedInstanceState.getInt(
+                "editingContentSelectionMask",
+                0
+            )
+            editingRuleOriginalSubscriptions = HashSet(
+                savedInstanceState.getLongArray("editingRuleOriginalSubscriptions")
+                    ?.toList().orEmpty()
+            )
+            editingRuleSelectedSubscriptions = HashSet(
+                savedInstanceState.getLongArray("editingRuleSelectedSubscriptions")
+                    ?.toList().orEmpty()
+            )
             currentScreen = savedInstanceState.getSerializable("currentScreen") as? ScreenState ?: InitialScreen
             subscriptionsListState = savedInstanceState.getParcelable("subscriptionsListState")
             iconsListState = savedInstanceState.getParcelable("iconsListState")
@@ -125,6 +171,26 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
         outState.putString("selectedIcon", selectedIcon?.name)
         outState.putLongArray("selectedSubscriptions", selectedSubscriptions.toLongArray())
         outState.putBoolean("wasSubscriptionSelectionChanged", wasSubscriptionSelectionChanged)
+        outState.putInt("selectedContentSelectionMask", selectedContentSelectionMask)
+        val contentOverrideEntries = contentSelectionOverrides.entries.toList()
+        outState.putLongArray(
+            "contentOverrideIds",
+            contentOverrideEntries.map { it.key }.toLongArray()
+        )
+        outState.putIntArray(
+            "contentOverrideMasks",
+            contentOverrideEntries.map { it.value }.toIntArray()
+        )
+        outState.putBoolean("wasContentRulesChanged", wasContentRulesChanged)
+        outState.putInt("editingContentSelectionMask", editingContentSelectionMask)
+        outState.putLongArray(
+            "editingRuleOriginalSubscriptions",
+            editingRuleOriginalSubscriptions.toLongArray()
+        )
+        outState.putLongArray(
+            "editingRuleSelectedSubscriptions",
+            editingRuleSelectedSubscriptions.toLongArray()
+        )
         outState.putSerializable("currentScreen", currentScreen)
         outState.putParcelable("subscriptionsListState", subscriptionsListState)
         outState.putParcelable("iconsListState", iconsListState)
@@ -148,7 +214,7 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
 
         viewModel.groupLiveData.observe(viewLifecycleOwner, Observer(::handleGroup))
         viewModel.subscriptionsLiveData.observe(viewLifecycleOwner) {
-            setupSubscriptionPicker(it.first, it.second)
+            setupSubscriptionPicker(it.subscriptions, it.memberships)
         }
         viewModel.dialogEventLiveData.observe(viewLifecycleOwner) {
             when (it) {
@@ -175,11 +241,16 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
         }
 
         setupIconPicker()
+        setupContentRules()
         setupListeners()
 
         showScreen(currentScreen)
 
-        if (currentScreen == SubscriptionsPickerScreen && wasSearchSubscriptionsVisible) {
+        if (currentScreen in listOf(
+                SubscriptionsPickerScreen,
+                ContentRuleSubscriptionsScreen
+            ) && wasSearchSubscriptionsVisible
+        ) {
             showSearch()
         } else if (currentScreen == InitialScreen && groupId == NO_GROUP_SELECTED) {
             showKeyboard()
@@ -200,8 +271,15 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
     //​//////////////////////////////////////////////////////////////////////// */
 
     override fun onBackPressed(): Boolean {
-        if (currentScreen is SubscriptionsPickerScreen && isSearchVisible()) {
+        if (currentScreen in listOf(
+                SubscriptionsPickerScreen,
+                ContentRuleSubscriptionsScreen
+            ) && isSearchVisible()
+        ) {
             hideSearch()
+            return true
+        } else if (currentScreen is ContentRuleSubscriptionsScreen) {
+            showScreen(ContentRulesScreen)
             return true
         } else if (currentScreen !is InitialScreen) {
             showScreen(InitialScreen)
@@ -217,6 +295,7 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
         feedGroupCreateBinding.cancelButton.setOnClickListener {
             when (currentScreen) {
                 InitialScreen -> dismiss()
+                ContentRuleSubscriptionsScreen -> showScreen(ContentRulesScreen)
                 else -> showScreen(InitialScreen)
             }
         }
@@ -233,6 +312,10 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
         feedGroupCreateBinding.selectChannelButton.setOnClickListener {
             feedGroupCreateBinding.subscriptionsSelectorList.scrollToPosition(0)
             showScreen(SubscriptionsPickerScreen)
+        }
+
+        feedGroupCreateBinding.contentRulesButton.setOnClickListener {
+            showScreen(ContentRulesScreen)
         }
 
         val headerMenu = feedGroupCreateBinding.subscriptionsHeaderToolbar.menu
@@ -280,7 +363,14 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
     private fun handlePositiveButton() = when {
         currentScreen is InitialScreen -> handlePositiveButtonInitialScreen()
         currentScreen is DeleteScreen -> viewModel.deleteGroup()
-        currentScreen is SubscriptionsPickerScreen && isSearchVisible() -> hideSearch()
+        currentScreen in listOf(
+            SubscriptionsPickerScreen,
+            ContentRuleSubscriptionsScreen
+        ) && isSearchVisible() -> hideSearch()
+        currentScreen is ContentRuleSubscriptionsScreen -> {
+            applyEditingContentRule()
+            showScreen(ContentRulesScreen)
+        }
         else -> showScreen(InitialScreen)
     }
 
@@ -303,8 +393,21 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
         }
 
         when (groupId) {
-            NO_GROUP_SELECTED -> viewModel.createGroup(name, icon, selectedSubscriptions)
-            else -> viewModel.updateGroup(name, icon, selectedSubscriptions, groupSortOrder)
+            NO_GROUP_SELECTED -> viewModel.createGroup(
+                name,
+                icon,
+                selectedSubscriptions,
+                selectedContentSelection(),
+                selectedContentOverrides()
+            )
+            else -> viewModel.updateGroup(
+                name,
+                icon,
+                selectedSubscriptions,
+                groupSortOrder,
+                selectedContentSelection(),
+                selectedContentOverrides()
+            )
         }
     }
 
@@ -313,6 +416,11 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
         val name = feedGroupEntity?.name ?: ""
         groupIcon = feedGroupEntity?.icon
         groupSortOrder = feedGroupEntity?.sortOrder ?: -1
+        if (!wasContentRulesChanged) {
+            selectedContentSelectionMask = feedGroupEntity?.contentSelection?.mask
+                ?: FeedContentSelection.ALL.mask
+            updateContentRulesUi()
+        }
 
         val feedGroupIcon = if (selectedIcon == null) icon else selectedIcon!!
         feedGroupCreateBinding.iconPreview.setImageResource(feedGroupIcon.getDrawableRes())
@@ -325,13 +433,21 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
     private val subscriptionPickerItemListener = OnItemClickListener { item, view ->
         if (item is PickerSubscriptionItem) {
             val subscriptionId = item.subscriptionEntity.uid
-            wasSubscriptionSelectionChanged = true
+            val selectedIds = if (currentScreen is ContentRuleSubscriptionsScreen) {
+                editingRuleSelectedSubscriptions
+            } else {
+                wasSubscriptionSelectionChanged = true
+                selectedSubscriptions
+            }
 
-            val isSelected = if (this.selectedSubscriptions.contains(subscriptionId)) {
-                this.selectedSubscriptions.remove(subscriptionId)
+            val isSelected = if (subscriptionId in selectedIds) {
+                selectedIds.remove(subscriptionId)
+                if (currentScreen !is ContentRuleSubscriptionsScreen) {
+                    contentSelectionOverrides.remove(subscriptionId)
+                }
                 false
             } else {
-                this.selectedSubscriptions.add(subscriptionId)
+                selectedIds.add(subscriptionId)
                 true
             }
 
@@ -342,13 +458,41 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
 
     private fun setupSubscriptionPicker(
         subscriptions: List<PickerSubscriptionItem>,
-        selectedSubscriptions: Set<Long>
+        memberships: List<FeedGroupSubscriptionEntity>
     ) {
+        latestSubscriptions = subscriptions
         if (!wasSubscriptionSelectionChanged) {
-            this.selectedSubscriptions.addAll(selectedSubscriptions)
+            this.selectedSubscriptions.addAll(memberships.map { it.subscriptionId })
+        }
+        if (!wasContentRulesChanged) {
+            contentSelectionOverrides.clear()
+            memberships.forEach { membership ->
+                membership.contentSelectionOverride?.let {
+                    contentSelectionOverrides[membership.subscriptionId] = it.mask
+                }
+            }
         }
 
+        renderSubscriptionPicker()
+        updateContentRulesUi()
+    }
+
+    private fun renderSubscriptionPicker() {
         updateSubscriptionSelectedCount()
+
+        val isEditingContentRule = currentScreen is ContentRuleSubscriptionsScreen
+        val subscriptions = if (isEditingContentRule) {
+            latestSubscriptions.filter {
+                it.subscriptionEntity.uid in selectedSubscriptions
+            }
+        } else {
+            latestSubscriptions
+        }
+        val selectedIds = if (isEditingContentRule) {
+            editingRuleSelectedSubscriptions
+        } else {
+            selectedSubscriptions
+        }
 
         if (subscriptions.isEmpty()) {
             subscriptionEmptyFooter.clear()
@@ -358,7 +502,7 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
         }
 
         subscriptions.forEach {
-            it.isSelected = this@FeedGroupDialog.selectedSubscriptions
+            it.isSelected = selectedIds
                 .contains(it.subscriptionEntity.uid)
         }
 
@@ -373,13 +517,198 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
     }
 
     private fun updateSubscriptionSelectedCount() {
-        val selectedCount = this.selectedSubscriptions.size
+        val selectedCount = if (currentScreen is ContentRuleSubscriptionsScreen) {
+            editingRuleSelectedSubscriptions.size
+        } else {
+            selectedSubscriptions.size
+        }
         val selectedCountText = resources.getQuantityString(
             R.plurals.feed_group_dialog_selection_count,
             selectedCount, selectedCount
         )
         feedGroupCreateBinding.selectedSubscriptionCountView.text = selectedCountText
         feedGroupCreateBinding.subscriptionsHeaderInfo.text = selectedCountText
+    }
+
+    private fun setupContentRules() {
+        feedGroupCreateBinding.defaultContentVideos.setOnClickListener {
+            updateDefaultContentSelection(it as android.widget.CheckBox)
+        }
+        feedGroupCreateBinding.defaultContentShorts.setOnClickListener {
+            updateDefaultContentSelection(it as android.widget.CheckBox)
+        }
+        feedGroupCreateBinding.defaultContentLive.setOnClickListener {
+            updateDefaultContentSelection(it as android.widget.CheckBox)
+        }
+        feedGroupCreateBinding.addContentExceptionButton.setOnClickListener {
+            showContentSelectionDialog()
+        }
+        updateContentRulesUi()
+    }
+
+    private fun updateDefaultContentSelection(changedCheckbox: android.widget.CheckBox) {
+        val mask = defaultContentSelectionMaskFromUi()
+        if (mask == 0) {
+            changedCheckbox.isChecked = true
+            Toast.makeText(
+                requireContext(),
+                R.string.feed_group_content_nonempty,
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        selectedContentSelectionMask = mask
+        wasContentRulesChanged = true
+        normalizeContentOverrides()
+        updateContentRulesUi()
+    }
+
+    private fun defaultContentSelectionMaskFromUi(): Int {
+        var mask = 0
+        if (feedGroupCreateBinding.defaultContentVideos.isChecked) {
+            mask = mask or FeedContentType.VIDEOS.mask
+        }
+        if (feedGroupCreateBinding.defaultContentShorts.isChecked) {
+            mask = mask or FeedContentType.SHORTS.mask
+        }
+        if (feedGroupCreateBinding.defaultContentLive.isChecked) {
+            mask = mask or FeedContentType.LIVE.mask
+        }
+        return mask
+    }
+
+    private fun updateContentRulesUi() {
+        if (_feedGroupCreateBinding == null) {
+            return
+        }
+
+        val defaultSelection = selectedContentSelection()
+        feedGroupCreateBinding.defaultContentVideos.isChecked =
+            defaultSelection.contains(FeedContentType.VIDEOS)
+        feedGroupCreateBinding.defaultContentShorts.isChecked =
+            defaultSelection.contains(FeedContentType.SHORTS)
+        feedGroupCreateBinding.defaultContentLive.isChecked =
+            defaultSelection.contains(FeedContentType.LIVE)
+        feedGroupCreateBinding.contentRulesButton.text = getString(
+            R.string.feed_group_content_summary,
+            contentSelectionLabel(defaultSelection)
+        )
+
+        val rows = feedGroupCreateBinding.contentExceptionRows
+        rows.removeAllViews()
+        selectedContentOverrides()
+            .entries
+            .groupBy({ it.value }, { it.key })
+            .toSortedMap(compareBy { it.mask })
+            .forEach { (selection, subscriptionIds) ->
+                val binding = FeedGroupContentRuleItemBinding.inflate(
+                    layoutInflater,
+                    rows,
+                    false
+                )
+                binding.editContentRuleButton.text = resources.getQuantityString(
+                    R.plurals.feed_group_content_rule_summary,
+                    subscriptionIds.size,
+                    contentSelectionLabel(selection),
+                    subscriptionIds.size
+                )
+                binding.editContentRuleButton.setOnClickListener {
+                    beginEditingContentRule(selection)
+                }
+                binding.deleteContentRuleButton.setOnClickListener {
+                    subscriptionIds.forEach(contentSelectionOverrides::remove)
+                    wasContentRulesChanged = true
+                    updateContentRulesUi()
+                }
+                rows.addView(binding.root)
+            }
+    }
+
+    private fun showContentSelectionDialog() {
+        val selections = (1..FeedContentSelection.ALL.mask)
+            .map(FeedContentSelection::fromMask)
+        val labels = selections.map(::contentSelectionLabel).toTypedArray()
+        var selectedIndex = 0
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.feed_group_content_add_exception)
+            .setSingleChoiceItems(labels, selectedIndex) { _, which ->
+                selectedIndex = which
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.ok) { _, _ ->
+                val selection = selections[selectedIndex]
+                if (selection == selectedContentSelection()) {
+                    Toast.makeText(
+                        requireContext(),
+                        R.string.feed_group_content_matches_default,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    beginEditingContentRule(selection)
+                }
+            }
+            .show()
+    }
+
+    private fun beginEditingContentRule(selection: FeedContentSelection) {
+        editingContentSelectionMask = selection.mask
+        editingRuleOriginalSubscriptions = HashSet(
+            contentSelectionOverrides.filterValues { it == selection.mask }.keys
+        )
+        editingRuleSelectedSubscriptions = HashSet(editingRuleOriginalSubscriptions)
+        showScreen(ContentRuleSubscriptionsScreen)
+        renderSubscriptionPicker()
+    }
+
+    private fun applyEditingContentRule() {
+        editingRuleOriginalSubscriptions.forEach(contentSelectionOverrides::remove)
+        editingRuleSelectedSubscriptions.forEach { subscriptionId ->
+            contentSelectionOverrides[subscriptionId] = editingContentSelectionMask
+        }
+        wasContentRulesChanged = true
+        normalizeContentOverrides()
+        editingContentSelectionMask = 0
+        editingRuleOriginalSubscriptions.clear()
+        editingRuleSelectedSubscriptions.clear()
+        updateContentRulesUi()
+    }
+
+    private fun normalizeContentOverrides() {
+        val normalized = FeedGroupContentRules.normalizeOverrides(
+            selectedContentSelection(),
+            selectedSubscriptions,
+            selectedContentOverrides()
+        )
+        contentSelectionOverrides.clear()
+        normalized.forEach { (subscriptionId, selection) ->
+            contentSelectionOverrides[subscriptionId] = selection.mask
+        }
+    }
+
+    private fun selectedContentSelection(): FeedContentSelection {
+        return FeedContentSelection.fromMask(selectedContentSelectionMask)
+    }
+
+    private fun selectedContentOverrides(): Map<Long, FeedContentSelection> {
+        return contentSelectionOverrides.mapValues { (_, mask) ->
+            FeedContentSelection.fromMask(mask)
+        }.filterKeys { it in selectedSubscriptions }
+    }
+
+    private fun contentSelectionLabel(selection: FeedContentSelection): String {
+        return buildList {
+            if (selection.contains(FeedContentType.VIDEOS)) {
+                add(getString(R.string.channel_tab_videos))
+            }
+            if (selection.contains(FeedContentType.SHORTS)) {
+                add(getString(R.string.channel_tab_shorts))
+            }
+            if (selection.contains(FeedContentType.LIVE)) {
+                add(getString(R.string.channel_tab_livestreams))
+            }
+        }.joinToString(", ")
     }
 
     private fun setupIconPicker() {
@@ -423,13 +752,23 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
 
     private fun showScreen(screen: ScreenState) {
         currentScreen = screen
+        updateSubscriptionSelectedCount()
 
         feedGroupCreateBinding.optionsRoot.onlyVisibleIn(InitialScreen)
+        feedGroupCreateBinding.contentRulesSelector.onlyVisibleIn(ContentRulesScreen)
         feedGroupCreateBinding.iconSelector.onlyVisibleIn(IconPickerScreen)
-        feedGroupCreateBinding.subscriptionsSelector.onlyVisibleIn(SubscriptionsPickerScreen)
+        feedGroupCreateBinding.subscriptionsSelector.onlyVisibleIn(
+            SubscriptionsPickerScreen,
+            ContentRuleSubscriptionsScreen
+        )
         feedGroupCreateBinding.deleteScreenMessage.onlyVisibleIn(DeleteScreen)
 
-        feedGroupCreateBinding.separator.onlyVisibleIn(SubscriptionsPickerScreen, IconPickerScreen)
+        feedGroupCreateBinding.separator.onlyVisibleIn(
+            SubscriptionsPickerScreen,
+            ContentRuleSubscriptionsScreen,
+            ContentRulesScreen,
+            IconPickerScreen
+        )
         feedGroupCreateBinding.cancelButton.onlyVisibleIn(InitialScreen, DeleteScreen)
 
         feedGroupCreateBinding.confirmButton.setText(
@@ -440,6 +779,22 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
         )
 
         feedGroupCreateBinding.deleteButton.isGone = currentScreen != InitialScreen || groupId == NO_GROUP_SELECTED
+
+        feedGroupCreateBinding.subscriptionsHeaderTitle.setText(
+            if (currentScreen is ContentRuleSubscriptionsScreen) {
+                R.string.feed_group_content_exceptions
+            } else {
+                R.string.tab_subscriptions
+            }
+        )
+
+        if (currentScreen in listOf(
+                SubscriptionsPickerScreen,
+                ContentRuleSubscriptionsScreen
+            )
+        ) {
+            renderSubscriptionPicker()
+        }
 
         hideKeyboard()
         hideSearch()

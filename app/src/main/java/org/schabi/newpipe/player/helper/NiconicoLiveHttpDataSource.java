@@ -59,6 +59,12 @@ public class NiconicoLiveHttpDataSource extends PurifiedHttpDataSource {
             return this;
         }
 
+        public final NiconicoLiveHttpDataSource.Factory setDefaultRequestProperty(
+                final String name, final String value) {
+            this.defaultRequestProperties.set(name, value);
+            return this;
+        }
+
         /**
          * Sets the user agent that will be used.
          *

@@ -88,6 +88,7 @@ import org.schabi.newpipe.local.history.HistoryRecordManager;
 import org.schabi.newpipe.player.PlayerService.PlayerType;
 import org.schabi.newpipe.player.Player;
 import org.schabi.newpipe.player.PlaybackStartupTrace;
+import org.schabi.newpipe.player.PlayerUiModeHelper;
 import org.schabi.newpipe.player.event.OnKeyDownListener;
 import org.schabi.newpipe.player.event.PlayerServiceExtendedEventListener;
 import org.schabi.newpipe.player.helper.MainPlayerQueueActionPolicy;
@@ -263,18 +264,6 @@ public final class VideoDetailFragment
             return;
         }
 
-        if (DeviceUtils.isLandscape(requireContext())) {
-            // If the video is playing but orientation changed
-            // let's make the video in fullscreen again
-            checkLandscape();
-        } else if (player.isFullscreen() && !player.isVerticalVideo()
-                // Tablet UI has orientation-independent fullscreen
-                && !DeviceUtils.isTablet(activity)) {
-            // Device is in portrait orientation after rotation but UI is in fullscreen.
-            // Return back to non-fullscreen state
-            player.toggleFullscreen();
-        }
-
         final Relation relation = mainPlayerRelationFor(serviceId, url);
         if (playerIsNotStopped() && relation == Relation.ACTIVE_ITEM) {
             attachMainPlayerToDisplayedVideo();
@@ -344,7 +333,8 @@ public final class VideoDetailFragment
             @Override
             public void onChange(final boolean selfChange) {
                 if (activity != null && !globalScreenOrientationLocked(activity)) {
-                    activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+                    PlayerUiModeHelper.setOrientation(activity, player,
+                            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
                 }
             }
         };
@@ -890,7 +880,7 @@ public final class VideoDetailFragment
             if (!DeviceUtils.isTablet(activity)) {
                 player.pause();
             }
-            restoreDefaultOrientation();
+            PlayerUiModeHelper.setFullscreen(player, false);
             setAutoPlay(false);
             return true;
         }
@@ -906,7 +896,8 @@ public final class VideoDetailFragment
 
         // That means that we are on the start of the stack,
         if (stack.size() <= 1) {
-            restoreDefaultOrientation();
+            PlayerUiModeHelper.setOrientation(activity, player,
+                    ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
             return false; // let MainActivity handle the onBack (e.g. to minimize the mini player)
         }
 
@@ -1328,19 +1319,13 @@ public final class VideoDetailFragment
     // Play Utils
     //////////////////////////////////////////////////////////////////////////*/
 
-    private void toggleFullscreenIfInFullscreenMode() {
-        // If a user watched video inside fullscreen mode and than chose another player
-        // return to non-fullscreen mode
-        if (isPlayerAvailable() && player.isFullscreen()) {
-            player.toggleFullscreen();
-        }
-    }
-
     private void openBackgroundPlayer(final boolean append) {
 
         final boolean useExternalAudioPlayer = false;
 
-        toggleFullscreenIfInFullscreenMode();
+        if (isPlayerAvailable()) {
+            PlayerUiModeHelper.setFullscreen(player, false);
+        }
 
         if (isPlayerAvailable()) {
             // FIXME Workaround #7427
@@ -1370,7 +1355,9 @@ public final class VideoDetailFragment
             player.setRecovery();
         }
 
-        toggleFullscreenIfInFullscreenMode();
+        if (isPlayerAvailable()) {
+            PlayerUiModeHelper.setFullscreen(player, false);
+        }
 
         final PlayQueue queue = setupPlayQueueForIntent(append);
         if (append) { //resumePlayback: false
@@ -1381,11 +1368,9 @@ public final class VideoDetailFragment
     }
 
     /**
-     * Opens the video player, in fullscreen if needed. In order to open fullscreen, the activity
-     * is toggled to landscape orientation (which will then cause fullscreen mode).
+     * Opens the video player and records an explicit fullscreen request when requested.
      *
-     * @param directlyFullscreenIfApplicable whether to open fullscreen if we are not already
-     *                                       in landscape and screen orientation is locked
+     * @param directlyFullscreenIfApplicable whether to request fullscreen directly
      */
     public void openVideoPlayer(final boolean directlyFullscreenIfApplicable) {
         prepareMainPlayerUi(directlyFullscreenIfApplicable);
@@ -1393,9 +1378,7 @@ public final class VideoDetailFragment
     }
 
     private void prepareMainPlayerUi(final boolean directlyFullscreenIfApplicable) {
-        if (directlyFullscreenIfApplicable
-                && !DeviceUtils.isLandscape(requireContext())
-                && PlayerHelper.globalScreenOrientationLocked(requireContext())) {
+        if (directlyFullscreenIfApplicable) {
             // Make sure the bottom sheet turns out expanded. When this code kicks in the bottom
             // sheet could not have fully expanded yet, and thus be in the STATE_SETTLING state.
             // When the activity is rotated, and its state is saved and then restored, the bottom
@@ -1404,18 +1387,16 @@ public final class VideoDetailFragment
             // STATE_COLLAPSED. This can be solved by manually setting the state that will be
             // restored (i.e. bottomSheetState) to STATE_EXPANDED.
             bottomSheetState = BottomSheetBehavior.STATE_EXPANDED;
-            // toggle landscape in order to open directly in fullscreen
-            onScreenRotationButtonClicked();
+            if (isPlayerAvailable()) {
+                PlayerUiModeHelper.setFullscreen(player, true);
+            } else {
+                // TODO: preserve the fullscreen request until the Player service is connected.
+            }
         }
     }
 
     /**
-     * If the option to start directly fullscreen is enabled, calls
-     * {@link #openVideoPlayer(boolean)} with {@code directlyFullscreenIfApplicable = true}, so that
-     * if the user is not already in landscape and he has screen orientation locked the activity
-     * rotates and fullscreen starts. Otherwise, if the option to start directly fullscreen is
-     * disabled, calls {@link #openVideoPlayer(boolean)} with {@code directlyFullscreenIfApplicable
-     * = false}, hence preventing it from going directly fullscreen.
+     * Passes the direct-fullscreen preference to {@link #openVideoPlayer(boolean)}.
      */
     public void openVideoPlayerAutoFullscreen() {
         openVideoPlayer(PlayerHelper.isStartMainPlayerFullscreenEnabled(requireContext()));
@@ -1937,19 +1918,11 @@ public final class VideoDetailFragment
                         }
                         break;
                     case ACTION_ENTER_FULLSCREEN:
-                        if(player != null) {
+                        if (player != null) {
                             moveFocusToMainFragment(false);
-                            onScreenRotationButtonClicked();
-                            new Thread(() -> {
-                                try {
-                                    Thread.sleep(500);
-                                } catch (InterruptedException e) {
-                                    e.printStackTrace();
-                                }
-                                context.sendBroadcast(new Intent(ACTION_SHOW_MAIN_PLAYER));
-                            }).start();
+                            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
+                            PlayerUiModeHelper.setFullscreen(player, true);
                         }
-
                         break;
                 }
             }
@@ -1970,20 +1943,6 @@ public final class VideoDetailFragment
     /*//////////////////////////////////////////////////////////////////////////
     // Orientation listener
     //////////////////////////////////////////////////////////////////////////*/
-
-    private void restoreDefaultOrientation() {
-        if (isPlayerAvailable() && player.videoPlayerSelected()) {
-            toggleFullscreenIfInFullscreenMode();
-        }
-
-        // This will show systemUI and pause the player.
-        // User can tap on Play button and video will be in fullscreen mode again
-        // Note for tablet: trying to avoid orientation changes since it's not easy
-        // to physically rotate the tablet every time
-        if (activity != null && !DeviceUtils.isTablet(activity)) {
-            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
-        }
-    }
 
     /*//////////////////////////////////////////////////////////////////////////
     // Contract
@@ -2441,7 +2400,9 @@ public final class VideoDetailFragment
     public void onPlayerError(final PlaybackException error, final boolean isCatchableException) {
         if (!isCatchableException) {
             // Properly exit from fullscreen
-            toggleFullscreenIfInFullscreenMode();
+            if (isPlayerAvailable()) {
+                PlayerUiModeHelper.setFullscreen(player, false);
+            }
             hideMainPlayerOnLoadingNewStream();
         }
     }
@@ -2487,35 +2448,6 @@ public final class VideoDetailFragment
         scrollToTop();
 
         addVideoPlayerView();
-    }
-
-    @Override
-    public void onScreenRotationButtonClicked() {
-        final boolean isLandscape = DeviceUtils.isLandscape(requireContext());
-        final boolean isTablet    = DeviceUtils.isTablet(activity);
-        final boolean autoLocked  = globalScreenOrientationLocked(activity);
-
-        // 1. 平板且（系统可自动旋转 或 当前已横），直接切播放器全屏/非全屏
-        if (isTablet && (!autoLocked || isLandscape)) {
-            player.toggleFullscreen();
-            return;
-        }
-
-        // 2. 手机 or 平板但系统锁定了自动旋转，就去真正设置屏幕方向
-        if (!autoLocked) {
-            if (isLandscape) {
-                player.toggleFullscreen();
-            } else {
-                activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
-            }
-        } else {
-            // 系统锁定时，再用“强制模式”来切
-            activity.setRequestedOrientation(
-                    isLandscape
-                            ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                            : ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            );
-        }
     }
 
     /*
@@ -2646,19 +2578,6 @@ public final class VideoDetailFragment
             }
             lp.screenBrightness = brightnessLevel;
             activity.getWindow().setAttributes(lp);
-        }
-    }
-
-    private void checkLandscape() {
-        if ((!player.isPlaying() && player.getPlayQueue() != playQueue)
-                || player.getPlayQueue() == null) {
-            setAutoPlay(true);
-        }
-
-        player.checkLandscape();
-        // Let's give a user time to look at video information page if video is not playing
-        if (globalScreenOrientationLocked(activity) && !player.isPlaying()) {
-            player.play();
         }
     }
 
@@ -2837,15 +2756,6 @@ public final class VideoDetailFragment
                             // from the player
                             setOverlayElementsClickable(false);
                             hideSystemUiIfNeeded();
-                            // Conditions when the player should be expanded to fullscreen
-                            if (DeviceUtils.isLandscape(requireContext())
-                                    && isPlayerAvailable()
-                                    && player.isPlaying()
-                                    && !player.isFullscreen()
-                                    && !DeviceUtils.isTablet(activity)
-                                    && player.videoPlayerSelected()) {
-                                player.toggleFullscreen();
-                            }
                             if (isPlayerAvailable()
                                     && player.isPlaying()
                                     && player.videoPlayerSelected()) {

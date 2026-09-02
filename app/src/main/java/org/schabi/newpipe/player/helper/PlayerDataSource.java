@@ -227,7 +227,18 @@ public class PlayerDataSource {
     }
 
     // NicoNicoMediaSourceFactories
-    public String getNicoLiveUrl(String url) throws ParsingException, IOException, ReCaptchaException, JsonParserException {
+    private static final class NiconicoLiveStreamData {
+        private final String url;
+        private final String cookie;
+
+        private NiconicoLiveStreamData(final String url, final String cookie) {
+            this.url = url;
+            this.cookie = cookie;
+        }
+    }
+
+    private NiconicoLiveStreamData getNicoLiveStreamData(final String url)
+            throws ParsingException, IOException, ReCaptchaException, JsonParserException {
         DownloaderImpl downloader = DownloaderImpl.getInstance();
         Document liveResponse = Jsoup.parse(downloader.get(url).responseBody());
         String result = JsonParser.object().from(liveResponse
@@ -240,8 +251,9 @@ public class PlayerDataSource {
         long startTime = System.nanoTime();
         do {
             String liveUrl = nicoWebSocketClient.getUrl();
-            if (liveUrl != null) {
-                return liveUrl;
+            String streamCookie = nicoWebSocketClient.getStreamCookie();
+            if (liveUrl != null && streamCookie != null && !streamCookie.isEmpty()) {
+                return new NiconicoLiveStreamData(liveUrl, streamCookie);
             }
         } while (TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - startTime) <= 10);
         webSocketClient.close();
@@ -258,16 +270,23 @@ public class PlayerDataSource {
     }
 
     public HlsMediaSource.Factory getNicoLiveHlsMediaSourceFactory(String liveUrl) {
+        final NiconicoLiveHttpDataSource.Factory httpDataSourceFactory =
+                new NiconicoLiveHttpDataSource.Factory(liveUrl)
+                        .setDefaultRequestProperties(Map.of(
+                                "Referer", "https://live.nicovideo.jp",
+                                "Origin", "https://live.nicovideo.jp",
+                                "User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                        + "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                        + "Chrome/89.0.4389.90 Safari/537.36"))
+                        .setTransferListener(transferListener);
         DataSource.Factory newFactory = new ResolvingDataSource.Factory(new NiconicoLiveDataSource
-                .Factory(context, new NiconicoLiveHttpDataSource.Factory(liveUrl)
-                .setDefaultRequestProperties(Map.of("Referer", "https://live.nicovideo.jp",
-                        "Origin", "https://live.nicovideo.jp",
-                        "User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36"
-                ))
-                .setTransferListener(transferListener)), dataSpec -> {
+                .Factory(context, httpDataSourceFactory), dataSpec -> {
             try {
                 if(dataSpec.uri.toString().contains("live.nicovideo.jp/watch")){
-                    return dataSpec.withUri(Uri.parse(getNicoLiveUrl(String.valueOf(dataSpec.uri))));
+                    final NiconicoLiveStreamData streamData = getNicoLiveStreamData(
+                            String.valueOf(dataSpec.uri));
+                    httpDataSourceFactory.setDefaultRequestProperty("Cookie", streamData.cookie);
+                    return dataSpec.withUri(Uri.parse(streamData.url));
                 }
                 return dataSpec;
             } catch (ParsingException | ReCaptchaException | JsonParserException e) {

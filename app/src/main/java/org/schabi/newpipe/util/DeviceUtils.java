@@ -140,13 +140,16 @@ public final class DeviceUtils {
                 || pm.hasSystemFeature(PackageManager.FEATURE_TELEVISION);
 
         // from https://stackoverflow.com/a/58932366
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            final boolean isBatteryAbsent = context.getSystemService(BatteryManager.class)
-                    .getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) == 0;
-            isTv = isTv || (isBatteryAbsent
-                    && !pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
-                    && pm.hasSystemFeature(PackageManager.FEATURE_USB_HOST)
-                    && pm.hasSystemFeature(PackageManager.FEATURE_ETHERNET));
+        if (!isTv && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            final BatteryManager batteryManager = context.getSystemService(BatteryManager.class);
+            if (batteryManager != null) {
+                final boolean isBatteryAbsent = batteryManager.getIntProperty(
+                        BatteryManager.BATTERY_PROPERTY_CAPACITY) == 0;
+                isTv = isBatteryAbsent
+                        && !pm.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
+                        && pm.hasSystemFeature(PackageManager.FEATURE_USB_HOST)
+                        && pm.hasSystemFeature(PackageManager.FEATURE_ETHERNET);
+            }
         }
 
         isTv = isTv || pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK);

@@ -33,7 +33,6 @@ import android.app.AlertDialog;
 import android.app.Service;
 import android.content.*;
 import android.content.res.Resources;
-import android.database.ContentObserver;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -44,7 +43,6 @@ import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
-import android.provider.Settings;
 import android.text.InputType;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -388,7 +386,6 @@ public final class Player implements
     private IntentFilter intentFilter;
     public PlayerServiceEventListener fragmentListener;
     private PlayerEventListener activityListener;
-    private ContentObserver settingsContentObserver;
 
     @NonNull private final SerialDisposable progressUpdateDisposable = new SerialDisposable();
     @NonNull private final CompositeDisposable databaseUpdateDisposable = new CompositeDisposable();
@@ -646,15 +643,6 @@ public final class Player implements
         binding.skipButton.setOnClickListener(this);
         binding.unskipButton.setOnClickListener(this);
 
-        settingsContentObserver = new ContentObserver(new Handler()) {
-            @Override
-            public void onChange(final boolean selfChange) {
-                setupScreenRotationButton();
-            }
-        };
-        context.getContentResolver().registerContentObserver(
-                Settings.System.getUriFor(Settings.System.ACCELEROMETER_ROTATION), false,
-                settingsContentObserver);
         binding.getRoot().addOnLayoutChangeListener(this::onLayoutChange);
 
         ViewCompat.setOnApplyWindowInsetsListener(binding.itemsListPanel, (view, windowInsets) -> {
@@ -835,9 +823,6 @@ public final class Player implements
         }
         trackSelector.setParameters(parametersBuilder);
 
-        // needed for tablets, check the function for a better explanation
-        directlyOpenFullscreenIfNeeded();
-
         final PlaybackParameters savedParameters = retrievePlaybackParametersFromPrefs(this);
         final float playbackSpeed = savedParameters.speed;
         final float playbackPitch = savedParameters.pitch;
@@ -962,22 +947,6 @@ public final class Player implements
         NavigationHelper.sendPlayerStartedEvent(context);
     }
 
-    /**
-     * Open fullscreen on tablets where the option to have the main player start automatically in
-     * fullscreen mode is on. Rotating the device to landscape is already done in {@link
-     * VideoDetailFragment#openVideoPlayer(boolean)} when the thumbnail is clicked, and that's
-     * enough for phones, but not for tablets since the mini player can be also shown in landscape.
-     */
-    private void directlyOpenFullscreenIfNeeded() {
-        if (fragmentListener != null
-                && PlayerHelper.isStartMainPlayerFullscreenEnabled(service.getInstance())
-                && DeviceUtils.isTablet(service.getInstance())
-                && videoPlayerSelected()
-                && PlayerHelper.globalScreenOrientationLocked(service.getInstance())) {
-            fragmentListener.onScreenRotationButtonClicked();
-        }
-    }
-
     private void initPlayback(@NonNull final PlayQueue queue,
                               @RepeatMode final int repeatMode,
                               final float playbackSpeed,
@@ -1088,7 +1057,6 @@ public final class Player implements
             binding.endScreen.setImageBitmap(null);
         }
 
-        context.getContentResolver().unregisterContentObserver(settingsContentObserver);
     }
 
     public void setRecovery() {
@@ -2724,7 +2692,6 @@ public final class Player implements
                 });
 
         changePopupWindowFlags(ONGOING_PLAYBACK_WINDOW_FLAGS);
-        checkLandscape();
         binding.getRoot().setKeepScreenOn(true);
 
         NotificationUtil.getInstance().createNotificationIfNeededAndUpdate(this, false);
@@ -3027,18 +2994,6 @@ public final class Player implements
                 ? R.drawable.ic_volume_off : R.drawable.ic_volume_up));
     }
     //endregion
-
-    public void onScreenRotationButtonClicked() {
-        if (!isVerticalVideo
-                || (service.isLandscape() && globalScreenOrientationLocked(context))) {
-            fragmentListener.onScreenRotationButtonClicked();
-        } else {
-            toggleFullscreen();
-        }
-    }
-
-
-
 
     /*//////////////////////////////////////////////////////////////////////////
     // ExoPlayer listeners (that didn't fit in other categories)
@@ -4686,14 +4641,7 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
             NavigationHelper.playOnMainPlayer(context, playQueue, true);
             return;
         } else if (v.getId() == binding.screenRotationButton.getId()) {
-            // Only if it's not a vertical video or vertical video but in landscape with locked
-            // orientation a screen orientation can be changed automatically
-            try {
-                Thread.sleep(50); // don't know why we need this from 4.5.0, but without this it act strange when exiting
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            onScreenRotationButtonClicked();
+            PlayerUiModeHelper.setFullscreen(this, !isFullscreen);
         } else if (v.getId() == binding.switchMute.getId()) {
             onMuteUnmuteButtonClicked();
         } else if (v.getId() == binding.playerCloseButton.getId()) {
@@ -4870,11 +4818,48 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
     //////////////////////////////////////////////////////////////////////////*/
     //region Video size, resize, orientation, fullscreen
 
+    void setFullscreen(final boolean fullscreen) {
+        if (DEBUG) {
+            Log.d(TAG, "setFullscreen() called with: fullscreen = [" + fullscreen + "]");
+        }
+        if (isFullscreen == fullscreen
+                || popupPlayerSelected()
+                || exoPlayerIsNull()
+                || fragmentListener == null) {
+            return;
+        }
+
+        isFullscreen = fullscreen;
+        // Pinch zoom is fullscreen-only and never survives either direction of the transition.
+        resetPinchZoom();
+        if (!isFullscreen) {
+            // Apply window insets because Android will not do it when orientation changes
+            // from landscape to portrait (open vertical video to reproduce)
+            binding.playbackControlRoot.setPadding(0, 0, 0, 0);
+        } else {
+            // Hide the controls while Android calculates the new window insets.
+            hideControls(0, 0);
+        }
+        fragmentListener.onFullscreenStateChanged(isFullscreen);
+
+        if (isFullscreen) {
+            binding.titleTextView.setVisibility(View.VISIBLE);
+            binding.channelTextView.setVisibility(View.VISIBLE);
+            binding.playerCloseButton.setVisibility(View.GONE);
+            binding.sleepTimer.setVisibility(View.VISIBLE);
+        } else {
+            binding.titleTextView.setVisibility(View.GONE);
+            binding.channelTextView.setVisibility(View.GONE);
+            binding.playerCloseButton.setVisibility(
+                    videoPlayerSelected() ? View.VISIBLE : View.GONE);
+            binding.sleepTimer.setVisibility(View.GONE);
+        }
+        setupScreenRotationButton();
+    }
+
     private void setupScreenRotationButton() {
-        binding.screenRotationButton.setVisibility(videoPlayerSelected()
-                && (globalScreenOrientationLocked(context) || isVerticalVideo
-                        || DeviceUtils.isTablet(context))
-                ? View.VISIBLE : View.GONE);
+        binding.screenRotationButton.setVisibility(
+                videoPlayerSelected() ? View.VISIBLE : View.GONE);
         binding.screenRotationButton.setImageDrawable(AppCompatResources.getDrawable(context,
                 isFullscreen ? R.drawable.ic_fullscreen_exit
                 : R.drawable.ic_fullscreen));
@@ -5116,70 +5101,13 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
                 ? forcedAspectRatio : videoNaturalAspectRatio);
         isVerticalVideo = videoSize.width < videoSize.height;
 
-        if (globalScreenOrientationLocked(context)
-                && isFullscreen
-                && service.isLandscape() == isVerticalVideo
-                && !DeviceUtils.isTv(context)
-                && !DeviceUtils.isTablet(context)
-                && fragmentListener != null) {
-            // set correct orientation
-            fragmentListener.onScreenRotationButtonClicked();
-        }
-
-        setupScreenRotationButton();
-    }
-
-    public void toggleFullscreen() {
-        if (DEBUG) {
-            Log.d(TAG, "toggleFullscreen() called");
-        }
-        if (popupPlayerSelected() || exoPlayerIsNull() || fragmentListener == null) {
-            return;
-        }
-
-        isFullscreen = !isFullscreen;
-        // Pinch zoom is fullscreen-only and never survives either direction of the transition.
-        resetPinchZoom();
-        if (!isFullscreen) {
-            // Apply window insets because Android will not do it when orientation changes
-            // from landscape to portrait (open vertical video to reproduce)
-            binding.playbackControlRoot.setPadding(0, 0, 0, 0);
-        } else {
-            // Android needs tens milliseconds to send new insets but a user is able to see
-            // how controls changes it's position from `0` to `nav bar height` padding.
-            // So just hide the controls to hide this visual inconsistency
-            hideControls(0, 0);
-        }
-        fragmentListener.onFullscreenStateChanged(isFullscreen);
-
         if (isFullscreen) {
-            binding.titleTextView.setVisibility(View.VISIBLE);
-            binding.channelTextView.setVisibility(View.VISIBLE);
-            binding.playerCloseButton.setVisibility(View.GONE);
-            binding.sleepTimer.setVisibility(View.VISIBLE);
-        } else {
-            binding.titleTextView.setVisibility(View.GONE);
-            binding.channelTextView.setVisibility(View.GONE);
-            binding.playerCloseButton.setVisibility(
-                    videoPlayerSelected() ? View.VISIBLE : View.GONE);
-            binding.sleepTimer.setVisibility(View.GONE);
+            PlayerUiModeHelper.applyVideoOrientation(this);
         }
+
         setupScreenRotationButton();
     }
 
-    public void checkLandscape() {
-        final AppCompatActivity parent = getParentActivity();
-        final boolean videoInLandscapeButNotInFullscreen =
-                service.isLandscape() && !isFullscreen && videoPlayerSelected() && !isAudioOnly;
-
-        final boolean notPaused = currentState != STATE_COMPLETED && currentState != STATE_PAUSED;
-        if (parent != null
-                && videoInLandscapeButNotInFullscreen
-                && notPaused
-                && !DeviceUtils.isTablet(context)) {
-            toggleFullscreen();
-        }
-    }
     //endregion
 
 

@@ -196,7 +196,7 @@ public class PlayerService extends Service implements PlayerServiceInterface {
         if (player != null) {
             // Exit from fullscreen when user closes the player via notification
             if (player.isFullscreen()) {
-                player.toggleFullscreen();
+                PlayerUiModeHelper.setFullscreen(player, false);
             }
             removeViewFromParent();
 

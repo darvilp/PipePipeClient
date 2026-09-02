@@ -498,6 +498,12 @@ public final class PlayerHelper {
                 context.getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 0) == 0;
     }
 
+    public static boolean shouldRotateFullscreenToVideoOrientation(
+            @NonNull final Context context) {
+        return getPreferences(context).getBoolean(context.getString(
+                R.string.rotate_fullscreen_to_video_orientation_key), true);
+    }
+
     public static int getProgressiveLoadIntervalBytes(@NonNull final Context context) {
         final String preferredIntervalBytes = getPreferences(context).getString(
                 context.getString(R.string.progressive_load_interval_key),

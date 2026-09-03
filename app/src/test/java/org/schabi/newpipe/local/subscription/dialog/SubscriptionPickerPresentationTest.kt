@@ -1,5 +1,6 @@
 package org.schabi.newpipe.local.subscription.dialog
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
@@ -47,25 +48,33 @@ class SubscriptionPickerPresentationTest {
     }
 
     @Test
-    fun `stored ungrouped preference is effective only in membership picker`() {
-        assertTrue(
-            effectiveShowOnlyUngrouped(
-                SubscriptionsPickerScreen,
-                storedPreference = true
-            )
+    fun `content rule candidates include unsaved draft members from full catalog`() {
+        val persistedMembershipCandidates = listOf(pickerItem(1L))
+        val fullCatalog = listOf(pickerItem(1L), pickerItem(2L), pickerItem(3L))
+
+        val candidates = subscriptionPickerCandidates(
+            screen = ContentRuleSubscriptionsScreen,
+            membershipSubscriptions = persistedMembershipCandidates,
+            contentRuleSubscriptions = fullCatalog,
+            selectedSubscriptionIds = setOf(1L, 2L)
         )
-        assertFalse(
-            effectiveShowOnlyUngrouped(
-                SubscriptionsPickerScreen,
-                storedPreference = false
-            )
+
+        assertEquals(listOf(1L, 2L), candidates.map { it.subscriptionEntity.uid })
+    }
+
+    @Test
+    fun `membership candidates retain the membership picker query`() {
+        val persistedMembershipCandidates = listOf(pickerItem(1L))
+        val fullCatalog = listOf(pickerItem(1L), pickerItem(2L), pickerItem(3L))
+
+        val candidates = subscriptionPickerCandidates(
+            screen = SubscriptionsPickerScreen,
+            membershipSubscriptions = persistedMembershipCandidates,
+            contentRuleSubscriptions = fullCatalog,
+            selectedSubscriptionIds = setOf(1L, 2L)
         )
-        assertFalse(
-            effectiveShowOnlyUngrouped(
-                ContentRuleSubscriptionsScreen,
-                storedPreference = true
-            )
-        )
+
+        assertEquals(listOf(1L), candidates.map { it.subscriptionEntity.uid })
     }
 
     private fun pickerItem(id: Long, isSelected: Boolean = false): PickerSubscriptionItem {

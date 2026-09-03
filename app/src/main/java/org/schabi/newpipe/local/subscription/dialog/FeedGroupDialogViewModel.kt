@@ -31,7 +31,7 @@ class FeedGroupDialogViewModel(
     private var filterSubscriptions = BehaviorProcessor.create<String>()
     private var toggleShowOnlyUngrouped = BehaviorProcessor.create<Boolean>()
 
-    private var subscriptionsFlowable = Flowable
+    private var membershipSubscriptionsFlowable = Flowable
         .combineLatest(
             filterSubscriptions.startWithItem(initialQuery),
             toggleShowOnlyUngrouped.startWithItem(initialShowOnlyUngrouped)
@@ -39,6 +39,17 @@ class FeedGroupDialogViewModel(
         .distinctUntilChanged()
         .switchMap { (query, showOnlyUngrouped) ->
             subscriptionManager.getSubscriptions(groupId, query, showOnlyUngrouped)
+        }.map { list -> list.map { PickerSubscriptionItem(it) } }
+
+    private var contentRuleSubscriptionsFlowable = filterSubscriptions
+        .startWithItem(initialQuery)
+        .distinctUntilChanged()
+        .switchMap { query ->
+            subscriptionManager.getSubscriptions(
+                FeedGroupEntity.GROUP_ALL_ID,
+                query,
+                false
+            )
         }.map { list -> list.map { PickerSubscriptionItem(it) } }
 
     private val mutableGroupLiveData = MutableLiveData<FeedGroupEntity>()
@@ -56,10 +67,17 @@ class FeedGroupDialogViewModel(
 
     private var subscriptionsDisposable = Flowable
         .combineLatest(
-            subscriptionsFlowable, feedDatabaseManager.subscriptionsForGroup(groupId)
-        ) { subscriptions: List<PickerSubscriptionItem>,
+            membershipSubscriptionsFlowable,
+            contentRuleSubscriptionsFlowable,
+            feedDatabaseManager.subscriptionsForGroup(groupId)
+        ) { membershipSubscriptions: List<PickerSubscriptionItem>,
+            contentRuleSubscriptions: List<PickerSubscriptionItem>,
             memberships: List<FeedGroupSubscriptionEntity> ->
-            SubscriptionsState(subscriptions, memberships)
+            SubscriptionsState(
+                membershipSubscriptions,
+                contentRuleSubscriptions,
+                memberships
+            )
         }
         .subscribeOn(Schedulers.io())
         .subscribe(mutableSubscriptionsLiveData::postValue)
@@ -146,7 +164,8 @@ class FeedGroupDialogViewModel(
     data class Filter(val query: String, val showOnlyUngrouped: Boolean)
 
     data class SubscriptionsState(
-        val subscriptions: List<PickerSubscriptionItem>,
+        val membershipSubscriptions: List<PickerSubscriptionItem>,
+        val contentRuleSubscriptions: List<PickerSubscriptionItem>,
         val memberships: List<FeedGroupSubscriptionEntity>
     )
 

@@ -208,7 +208,9 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
             this,
             FeedGroupDialogViewModel.Factory(
                 requireContext(),
-                groupId, subscriptionsCurrentSearchQuery, subscriptionsShowOnlyUngrouped
+                groupId,
+                subscriptionsCurrentSearchQuery,
+                effectiveShowOnlyUngrouped(currentScreen, subscriptionsShowOnlyUngrouped)
             )
         ).get(FeedGroupDialogViewModel::class.java)
 
@@ -501,12 +503,10 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
             subscriptionEmptyFooter.clear()
         }
 
-        subscriptions.forEach {
-            it.isSelected = selectedIds
-                .contains(it.subscriptionEntity.uid)
-        }
-
-        subscriptionMainSection.update(subscriptions, false)
+        subscriptionMainSection.update(
+            subscriptionPickerPresentationItems(subscriptions, selectedIds),
+            false
+        )
 
         if (subscriptionsListState != null) {
             feedGroupCreateBinding.subscriptionsSelectorList.layoutManager?.onRestoreInstanceState(subscriptionsListState)
@@ -788,11 +788,21 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
             }
         )
 
+        feedGroupCreateBinding.subscriptionsHeaderToolbar.menu
+            .findItem(R.id.feed_group_toggle_show_only_ungrouped_subscriptions)
+            .apply {
+                isVisible = currentScreen is SubscriptionsPickerScreen
+                isChecked = subscriptionsShowOnlyUngrouped
+            }
+
         if (currentScreen in listOf(
                 SubscriptionsPickerScreen,
                 ContentRuleSubscriptionsScreen
             )
         ) {
+            viewModel.toggleShowOnlyUngrouped(
+                effectiveShowOnlyUngrouped(currentScreen, subscriptionsShowOnlyUngrouped)
+            )
             renderSubscriptionPicker()
         }
 

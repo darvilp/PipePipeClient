@@ -656,7 +656,7 @@
 <string name="feed_group_content_default">Default content</string>
     <string name="feed_group_content_exceptions">Channel exceptions</string>
     <string name="feed_group_content_add_exception">Add channel exception</string>
-    <string name="feed_group_content_summary">Content: %1$s</string>
+    <string name="feed_group_content_summary">Configure content: %1$s</string>
     <plurals name="feed_group_content_rule_summary">
         <item quantity="one">%1$s · %2$d channel</item>
         <item quantity="other">%1$s · %2$d channels</item>

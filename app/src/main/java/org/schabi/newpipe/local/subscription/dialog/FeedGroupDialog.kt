@@ -89,7 +89,8 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
     private val subscriptionMainSection = Section()
     private val subscriptionEmptyFooter = Section()
     private lateinit var subscriptionGroupAdapter: GroupieAdapter
-    private var latestSubscriptions: List<PickerSubscriptionItem> = emptyList()
+    private var latestMembershipSubscriptions: List<PickerSubscriptionItem> = emptyList()
+    private var latestContentRuleSubscriptions: List<PickerSubscriptionItem> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -210,13 +211,17 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
                 requireContext(),
                 groupId,
                 subscriptionsCurrentSearchQuery,
-                effectiveShowOnlyUngrouped(currentScreen, subscriptionsShowOnlyUngrouped)
+                subscriptionsShowOnlyUngrouped
             )
         ).get(FeedGroupDialogViewModel::class.java)
 
         viewModel.groupLiveData.observe(viewLifecycleOwner, Observer(::handleGroup))
         viewModel.subscriptionsLiveData.observe(viewLifecycleOwner) {
-            setupSubscriptionPicker(it.subscriptions, it.memberships)
+            setupSubscriptionPicker(
+                it.membershipSubscriptions,
+                it.contentRuleSubscriptions,
+                it.memberships
+            )
         }
         viewModel.dialogEventLiveData.observe(viewLifecycleOwner) {
             when (it) {
@@ -459,10 +464,12 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
     }
 
     private fun setupSubscriptionPicker(
-        subscriptions: List<PickerSubscriptionItem>,
+        membershipSubscriptions: List<PickerSubscriptionItem>,
+        contentRuleSubscriptions: List<PickerSubscriptionItem>,
         memberships: List<FeedGroupSubscriptionEntity>
     ) {
-        latestSubscriptions = subscriptions
+        latestMembershipSubscriptions = membershipSubscriptions
+        latestContentRuleSubscriptions = contentRuleSubscriptions
         if (!wasSubscriptionSelectionChanged) {
             this.selectedSubscriptions.addAll(memberships.map { it.subscriptionId })
         }
@@ -483,13 +490,12 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
         updateSubscriptionSelectedCount()
 
         val isEditingContentRule = currentScreen is ContentRuleSubscriptionsScreen
-        val subscriptions = if (isEditingContentRule) {
-            latestSubscriptions.filter {
-                it.subscriptionEntity.uid in selectedSubscriptions
-            }
-        } else {
-            latestSubscriptions
-        }
+        val subscriptions = subscriptionPickerCandidates(
+            currentScreen,
+            latestMembershipSubscriptions,
+            latestContentRuleSubscriptions,
+            selectedSubscriptions
+        )
         val selectedIds = if (isEditingContentRule) {
             editingRuleSelectedSubscriptions
         } else {
@@ -800,9 +806,6 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
                 ContentRuleSubscriptionsScreen
             )
         ) {
-            viewModel.toggleShowOnlyUngrouped(
-                effectiveShowOnlyUngrouped(currentScreen, subscriptionsShowOnlyUngrouped)
-            )
             renderSubscriptionPicker()
         }
 

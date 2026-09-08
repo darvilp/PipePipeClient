@@ -3,6 +3,7 @@ package org.schabi.newpipe.player.playqueue;
 import android.view.View;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -10,8 +11,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.schabi.newpipe.views.ItemDragTouchHelperCallback;
 
 public abstract class PlayQueueItemTouchCallback extends ItemDragTouchHelperCallback {
-    private int pendingAnchorPosition = RecyclerView.NO_POSITION;
-    private int pendingAnchorOffset;
+    @Nullable private PendingViewportAnchor pendingViewportAnchor;
 
     public PlayQueueItemTouchCallback() {
         super(ItemTouchHelper.UP | ItemTouchHelper.DOWN, ItemTouchHelper.RIGHT);
@@ -35,7 +35,11 @@ public abstract class PlayQueueItemTouchCallback extends ItemDragTouchHelperCall
             return false;
         }
 
-        pendingAnchorPosition = RecyclerView.NO_POSITION;
+        if (pendingViewportAnchor != null && pendingViewportAnchor.isWaiting()) {
+            // Binding positions still describe the previous order until the MOVE event arrives.
+            return false;
+        }
+        clearPendingAnchor();
         final RecyclerView.LayoutManager layoutManager = recyclerView.getLayoutManager();
         if (layoutManager instanceof LinearLayoutManager && targetIndex > sourceIndex) {
             final LinearLayoutManager linearLayoutManager = (LinearLayoutManager) layoutManager;
@@ -46,10 +50,16 @@ public abstract class PlayQueueItemTouchCallback extends ItemDragTouchHelperCall
             if (firstVisibleView != null) {
                 // Preserve the current viewport slot, not the identity of the dragged holder.
                 // Capture it anew for each swap so edge scrolling remains free to advance it.
-                pendingAnchorPosition = firstVisiblePosition;
-                pendingAnchorOffset = linearLayoutManager.getDecoratedTop(firstVisibleView)
-                        - ((RecyclerView.LayoutParams) firstVisibleView.getLayoutParams()).topMargin
-                        - recyclerView.getPaddingTop();
+                final RecyclerView.Adapter<?> adapter = recyclerView.getAdapter();
+                if (adapter != null) {
+                    final int offset = linearLayoutManager.getDecoratedTop(firstVisibleView)
+                            - ((RecyclerView.LayoutParams) firstVisibleView.getLayoutParams())
+                                    .topMargin
+                            - recyclerView.getPaddingTop();
+                    pendingViewportAnchor = new PendingViewportAnchor(recyclerView,
+                            linearLayoutManager, adapter, sourceIndex, targetIndex,
+                            firstVisiblePosition, offset);
+                }
             }
         }
 
@@ -61,7 +71,7 @@ public abstract class PlayQueueItemTouchCallback extends ItemDragTouchHelperCall
     public void onSelectedChanged(final RecyclerView.ViewHolder viewHolder,
                                   final int actionState) {
         super.onSelectedChanged(viewHolder, actionState);
-        pendingAnchorPosition = RecyclerView.NO_POSITION;
+        clearPendingAnchor();
     }
 
     @Override
@@ -72,20 +82,80 @@ public abstract class PlayQueueItemTouchCallback extends ItemDragTouchHelperCall
                         final int toPos,
                         final int x,
                         final int y) {
-        final RecyclerView.LayoutManager layoutManager = recyclerView.getLayoutManager();
-        if (layoutManager instanceof LinearLayoutManager
-                && pendingAnchorPosition != RecyclerView.NO_POSITION) {
-            // RecyclerView otherwise follows the dragged holder when it is the first visible row,
-            // making each move expose another target without any further finger motion. Apply the
-            // anchor captured before the adapter move changes RecyclerView's position mapping.
-            ((LinearLayoutManager) layoutManager).scrollToPositionWithOffset(
-                    pendingAnchorPosition, pendingAnchorOffset);
-            pendingAnchorPosition = RecyclerView.NO_POSITION;
+        if (pendingViewportAnchor != null) {
+            // The queue broadcasts asynchronously. Apply the anchor from the adapter notification,
+            // otherwise a layout before that notification consumes it against the old item order.
             return;
         }
 
-        pendingAnchorPosition = RecyclerView.NO_POSITION;
         super.onMoved(recyclerView, viewHolder, fromPos, target, toPos, x, y);
+    }
+
+    private void clearPendingAnchor() {
+        if (pendingViewportAnchor != null) {
+            pendingViewportAnchor.cancel();
+            pendingViewportAnchor = null;
+        }
+    }
+
+    private static final class PendingViewportAnchor extends RecyclerView.AdapterDataObserver {
+        private final RecyclerView recycler;
+        private final LinearLayoutManager layout;
+        private final RecyclerView.Adapter<?> adapter;
+        private final int from;
+        private final int to;
+        private final int position;
+        private final int offset;
+        private boolean waiting = true;
+
+        PendingViewportAnchor(final RecyclerView recycler, final LinearLayoutManager layout,
+                              final RecyclerView.Adapter<?> adapter, final int from, final int to,
+                              final int position, final int offset) {
+            this.recycler = recycler;
+            this.layout = layout;
+            this.adapter = adapter;
+            this.from = from;
+            this.to = to;
+            this.position = position;
+            this.offset = offset;
+            adapter.registerAdapterDataObserver(this);
+        }
+
+        @Override
+        public void onItemRangeMoved(final int fromPosition, final int toPosition,
+                                     final int itemCount) {
+            cancel();
+            if (fromPosition == from && toPosition == to && itemCount == 1
+                    && recycler.getAdapter() == adapter && recycler.getLayoutManager() == layout) {
+                layout.scrollToPositionWithOffset(position, offset);
+            }
+        }
+
+        @Override
+        public void onChanged() {
+            cancel();
+        }
+
+        @Override
+        public void onItemRangeInserted(final int positionStart, final int itemCount) {
+            cancel();
+        }
+
+        @Override
+        public void onItemRangeRemoved(final int positionStart, final int itemCount) {
+            cancel();
+        }
+
+        boolean isWaiting() {
+            return waiting;
+        }
+
+        void cancel() {
+            if (waiting) {
+                waiting = false;
+                adapter.unregisterAdapterDataObserver(this);
+            }
+        }
     }
 
     @Override

@@ -9,6 +9,7 @@ import io.reactivex.rxjava3.core.Maybe
 import io.reactivex.rxjava3.schedulers.Schedulers
 import org.schabi.newpipe.MainActivity.DEBUG
 import org.schabi.newpipe.NewPipeDatabase
+import org.schabi.newpipe.database.AppDatabase
 import org.schabi.newpipe.database.feed.model.FeedContentSelection
 import org.schabi.newpipe.database.feed.model.FeedEntity
 import org.schabi.newpipe.database.feed.model.FeedGroupContentRules
@@ -27,8 +28,9 @@ import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 
-class FeedDatabaseManager(context: Context) {
-    private val database = NewPipeDatabase.getInstance(context)
+class FeedDatabaseManager internal constructor(private val database: AppDatabase) {
+    constructor(context: Context) : this(NewPipeDatabase.getInstance(context))
+
     private val feedTable = database.feedDAO()
     private val feedGroupTable = database.feedGroupDAO()
     private val streamTable = database.streamDAO()

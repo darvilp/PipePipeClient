@@ -212,6 +212,9 @@ public final class VideoDetailFragment
     protected String url = null;
     @Nullable
     protected PlayQueue playQueue = null;
+    // Keep an explicit navigation request separate from asynchronous active-queue updates.
+    @Nullable
+    private PlayQueue pendingPlaybackQueue;
     int bottomSheetState = BottomSheetBehavior.STATE_EXPANDED;
     protected boolean autoPlayEnabled = true;
     SponsorBlockMode currentSponsorBlockMode = null;
@@ -309,6 +312,7 @@ public final class VideoDetailFragment
                                                   @Nullable final PlayQueue queue) {
         final VideoDetailFragment instance = new VideoDetailFragment();
         instance.setInitialData(serviceId, videoUrl, name, queue);
+        instance.pendingPlaybackQueue = queue;
         return instance;
     }
 
@@ -368,6 +372,10 @@ public final class VideoDetailFragment
         outState.putString("url", url);
         outState.putInt("bottomSheetState", sanitizeBottomSheetState(bottomSheetState));
         outState.putBoolean("autoPlayEnabled", autoPlayEnabled);
+        if (pendingPlaybackQueue != null) {
+            outState.putString("pendingPlaybackQueue", SerializedCache.getInstance()
+                    .put(pendingPlaybackQueue, PlayQueue.class));
+        }
         outState.putString("currentSponsorBlockMode", currentSponsorBlockMode != null ? currentSponsorBlockMode.name() : null);
     }
 
@@ -380,6 +388,12 @@ public final class VideoDetailFragment
         bottomSheetState = sanitizeBottomSheetState(savedInstanceState.getInt(
                 "bottomSheetState", BottomSheetBehavior.STATE_EXPANDED));
         autoPlayEnabled = savedInstanceState.getBoolean("autoPlayEnabled", true);
+        final String pendingQueueKey = savedInstanceState.getString("pendingPlaybackQueue");
+        pendingPlaybackQueue = pendingQueueKey == null ? null
+                : SerializedCache.getInstance().get(pendingQueueKey, PlayQueue.class);
+        if (pendingPlaybackQueue != null) {
+            playQueue = pendingPlaybackQueue;
+        }
         String modeStr = savedInstanceState.getString("currentSponsorBlockMode");
         currentSponsorBlockMode = modeStr != null ? SponsorBlockMode.valueOf(modeStr) : null;
     }
@@ -934,6 +948,7 @@ public final class VideoDetailFragment
     }
 
     private void setupFromHistoryItem(final StackItem item) {
+        pendingPlaybackQueue = null;
         setAutoPlay(false);
         setInitialData(item.getServiceId(), item.getUrl(),
                 item.getTitle() == null ? "" : item.getTitle(), item.getPlayQueue());
@@ -986,6 +1001,7 @@ public final class VideoDetailFragment
         }
 
         setInitialData(newServiceId, newUrl, newTitle, newQueue);
+        pendingPlaybackQueue = newQueue;
         startLoading(false, true);
     }
 
@@ -1377,6 +1393,7 @@ public final class VideoDetailFragment
             NavigationHelper.enqueueOnPlayer(activity, queue, PlayerType.POPUP);
         } else {
             NavigationHelper.playOnPopupPlayer(activity, queue, true);
+            pendingPlaybackQueue = null;
         }
     }
 
@@ -1538,6 +1555,7 @@ public final class VideoDetailFragment
         playerIntent.putExtra(Player.PLAYER_TYPE, PlayerType.VIDEO.ordinal());
         PlaybackStartupTrace.attach(playerIntent, pendingStartupTraceId);
         ContextCompat.startForegroundService(activity, playerIntent);
+        pendingPlaybackQueue = null;
     }
 
     private void beginMainPlayerPlayback(@NonNull final StreamInfo targetInfo) {
@@ -1557,6 +1575,7 @@ public final class VideoDetailFragment
             NavigationHelper.enqueueOnPlayer(activity, queue, PlayerType.AUDIO);
         } else {
             NavigationHelper.playOnBackgroundPlayer(activity, queue, true);
+            pendingPlaybackQueue = null;
         }
     }
 
@@ -1571,10 +1590,13 @@ public final class VideoDetailFragment
         }
 
         if (playerIsNotStopped()
+                && (pendingPlaybackQueue == null
+                || pendingPlaybackQueue.equals(player.getPlayQueue()))
                 && mainPlayerRelationFor(currentInfo.getServiceId(), currentInfo.getOriginalUrl())
                 == Relation.ACTIVE_ITEM) {
             attachMainPlayerToDisplayedVideo();
             player.play();
+            pendingPlaybackQueue = null;
             return;
         }
 
@@ -1592,6 +1614,7 @@ public final class VideoDetailFragment
                 DeviceUtils.getPlayerServiceClass(), queue, true, autoPlayEnabled);
         PlaybackStartupTrace.attach(playerIntent, pendingStartupTraceId);
         ContextCompat.startForegroundService(activity, playerIntent);
+        pendingPlaybackQueue = null;
     }
 
     /**
@@ -1630,7 +1653,7 @@ public final class VideoDetailFragment
             return new SinglePlayQueue(currentInfo);
         }
 
-        PlayQueue queue = playQueue;
+        PlayQueue queue = pendingPlaybackQueue != null ? pendingPlaybackQueue : playQueue;
         // Size can be 0 because queue removes bad stream automatically when error occurs
         if (queue == null || queue.isEmpty()) {
             queue = new SinglePlayQueue(currentInfo);
@@ -2308,6 +2331,10 @@ public final class VideoDetailFragment
 
     @Override
     public void onQueueUpdate(final PlayQueue queue) {
+        if (pendingPlaybackQueue != null) {
+            // The initial service callback can still describe the playlist being replaced.
+            return;
+        }
         @Nullable final PlayQueueItem activeItem = queue.getItem();
         final Relation relation = MainPlayerQueueBrowsingPolicy.classify(
                 player == null ? null : player.getPlayerType(),
@@ -2718,6 +2745,7 @@ public final class VideoDetailFragment
             currentWorker.dispose();
         }
         playerHolder.stopService();
+        pendingPlaybackQueue = null;
         setInitialData(0, null, "", null);
         currentInfo = null;
         updateOverlayData(null, null, null);

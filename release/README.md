@@ -34,7 +34,7 @@ tools/build-unofficial-release.sh
 
 The script refuses missing signing inputs and dirty or mismatched source. It runs JVM tests, release assembly and release lint, then verifies the actual arm64 APK's package, version, non-debuggable manifest, SDK range, native ABI, 16 KB zip alignment and signing certificate. It emits a timestamped directory under `build/unofficial`, including the APK, checksums, manifests and release notes. It refuses an existing candidate directory. An optional first argument selects the parent output directory.
 
-The first counter is base version code `1108`, producing arm64 code `110804`, with version name `5.3.1-beta-unofficial.1`. Increment the fork counter for every subsequent distributed build, independently of the upstream version name. Never overwrite an old APK or reuse a public release tag.
+The current counter is base version code `1109`, producing arm64 code `110904`, with version name `5.3.1-beta-unofficial.2`. Increment the fork counter for every subsequent distributed build, independently of the upstream version name. Never overwrite an old APK or reuse a public release tag.
 
 ## Validation limits and lint baseline
 
@@ -47,7 +47,7 @@ Android callback, database and continuous-drag regressions accompany the fixes. 
 After candidate acceptance and publication approval:
 
 1. Make both exact source revisions available on the fork repositories using normal pushes.
-2. Tag the tested client commit, for example `all-features/5.3.1-beta-unofficial.1`, refusing an existing tag.
+2. Tag the tested client commit, for example `all-features/5.3.1-beta-unofficial.2`, refusing an existing tag.
 3. Create a draft prerelease in `darvilp/PipePipeClient`; attach the verified arm64 APK, checksums, generated manifests, release notes and validation record.
 4. Verify the draft target and downloaded asset hashes before publishing it as a prerelease.
 
@@ -64,3 +64,15 @@ Keep previous releases and local APK copies. A safe rollback may require rebuild
 5. Run the same instrument with `-e releaseUpgradePhase verify` and require `Release upgrade verify: PASS`. It checks the non-debuggable release version, retained subscription, playlist, speed, pitch and theme, and the legacy worker's public constructor through the release class loader.
 
 The test checks controlled persisted records; it does not establish playback quality, queue touch behavior on hardware, or preservation of every possible user configuration. Always target the intended device explicitly with `adb -s`.
+
+## Repeat the live queue regression
+
+The ordinary queue tests cover deferred adapter notifications, viewport offsets, gesture cancellation and continuous dragging. `PlayQueueActivityGestureTest` adds an opt-in online test using the real player service, separate queue activity and Android touch injection. It starts a synthetic queue of public sample videos and stops its service and activities afterward. Run only on a disposable test device with the debug app and test APK installed:
+
+```bash
+adb -s <device> shell am instrument -w -e queueActivityProbe true \
+  -e class org.schabi.newpipe.player.PlayQueueActivityGestureTest \
+  InfinityLoop1309.NewPipeEnhanced.debug.allfeatures.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+Require both cases to pass: the dragged first row is playing, and another row is playing. Each one-row drag must reorder once and leave the viewport at position 0. This debug regression does not replace acceptance of the signed release APK on the target phone.

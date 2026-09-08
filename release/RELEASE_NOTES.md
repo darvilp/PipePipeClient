@@ -1,8 +1,10 @@
-# PipePipe All Features 5.3.1-beta-unofficial.1
+# PipePipe All Features 5.3.1-beta-unofficial.2
 
 Unofficial prerelease candidate from the darvilp fork. It retains the completed all-features integration: queue enqueue/play actions, browsing without replacing playback, nonblocking refresh, fullscreen controls and subscription-group content rules.
 
 ## Corrections
+
+- Fix immediate runaway reordering when dragging the first queue row down in the separate queue. The viewport anchor now waits for the asynchronous adapter move notification. A real player-service regression reproduced 44 swaps from a one-row gesture before the fix and one swap afterward. The existing edge-scroll speed curve is unchanged.
 
 - Keep the queue viewport stable when dragging the first visible item down. Reversing after reaching the top no longer retains an anchor that undoes later edge scrolling. Row margins are included in the saved viewport offset.
 - Preserve an explicitly requested playlist through service callbacks, including when its selected video is already playing. Passive browsing still retains the active queue.
@@ -12,7 +14,7 @@ Unofficial prerelease candidate from the darvilp fork. It retains the completed 
 
 ## Installation and updates
 
-This candidate uses the existing all-features application ID and established signing certificate, with arm64 version code `110804`. Its release variant is not debuggable. The app label explicitly identifies the unofficial build. Download future updates from the darvilp release page in Settings; automatic official updates are disabled and old official update jobs are cancelled.
+This candidate uses the existing all-features application ID and established signing certificate, with arm64 version code `110904`. Its release variant is not debuggable. The app label explicitly identifies the unofficial build. Download future updates from the darvilp release page in Settings; automatic official updates are disabled and old official update jobs are cancelled.
 
 ## Validation and known limits
 

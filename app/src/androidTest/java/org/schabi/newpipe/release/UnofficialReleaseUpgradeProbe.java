@@ -9,6 +9,8 @@ import android.content.pm.ApplicationInfo;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 
+import org.schabi.newpipe.BuildConfig;
+
 /** Explicit two-install probe using framework instrumentation to avoid minified-library conflicts. */
 public class UnofficialReleaseUpgradeProbe extends Instrumentation {
     private String phase;
@@ -88,7 +90,7 @@ public class UnofficialReleaseUpgradeProbe extends Instrumentation {
         final Context context = targetContext();
         assertTrue("Must exercise the actual release variant",
                 (context.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) == 0);
-        assertEquals("5.3.1-beta-unofficial.1", context.getPackageManager()
+        assertEquals(BuildConfig.VERSION_NAME, context.getPackageManager()
                 .getPackageInfo(context.getPackageName(), 0).versionName);
         assertTrue("The older-install phase must run before upgrading",
                 preferences(context).getBoolean("release_upgrade_fixture", false));

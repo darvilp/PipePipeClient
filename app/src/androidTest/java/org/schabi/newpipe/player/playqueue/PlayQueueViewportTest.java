@@ -1,6 +1,7 @@
 package org.schabi.newpipe.player.playqueue;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -25,6 +26,59 @@ import java.util.List;
 /** Real RecyclerView position mapping and layout, without network or player dependencies. */
 @RunWith(AndroidJUnit4.class)
 public class PlayQueueViewportTest {
+    @Test
+    public void deferredMoveNotificationPreservesAnchorAfterInterveningLayout() {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            final Fixture fixture = new Fixture(0, 0, true);
+            fixture.scrollTo(0, 0);
+            fixture.move(0, 1);
+            // A real input frame can lay out before the queue's asynchronous MOVE event arrives.
+            fixture.pendingMove.run();
+            fixture.performLayout();
+            assertEquals(0, fixture.layout.findFirstVisibleItemPosition());
+            assertEquals(0, fixture.layout.findViewByPosition(0).getTop());
+            assertEquals(Integer.valueOf(0), fixture.items.get(1));
+        });
+    }
+
+    @Test
+    public void anotherMoveWaitsForDeferredAdapterPositions() {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            final Fixture fixture = new Fixture(0, 0, true);
+            fixture.scrollTo(0, 0);
+            fixture.move(0, 1);
+            assertFalse(fixture.callback.onMove(fixture.recycler,
+                    fixture.holder(0), fixture.holder(1)));
+            fixture.pendingMove.run();
+            fixture.performLayout();
+            fixture.move(1, 2);
+            fixture.pendingMove.run();
+            fixture.performLayout();
+            assertEquals(0, fixture.layout.findFirstVisibleItemPosition());
+            assertEquals(Integer.valueOf(0), fixture.items.get(2));
+        });
+    }
+
+    @Test
+    public void releaseCancelsDeferredAnchorAndAllowsFreshDrag() {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            final Fixture fixture = new Fixture(0, 0, true);
+            fixture.scrollTo(0, 0);
+            fixture.move(0, 1);
+            fixture.callback.onSelectedChanged(null, ItemTouchHelper.ACTION_STATE_IDLE);
+            fixture.pendingMove.run();
+            fixture.performLayout();
+            assertEquals(1, fixture.layout.findFirstVisibleItemPosition());
+            fixture.scrollTo(0, 0);
+            fixture.callback.onSelectedChanged(fixture.holder(0), ItemTouchHelper.ACTION_STATE_DRAG);
+            fixture.move(0, 1);
+            fixture.pendingMove.run();
+            fixture.performLayout();
+            assertEquals(0, fixture.layout.findFirstVisibleItemPosition());
+            assertEquals(Integer.valueOf(1), fixture.items.get(1));
+        });
+    }
+
     @Test
     public void downwardMovePreservesMarginsAndPadding() {
         InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
@@ -91,12 +145,17 @@ public class PlayQueueViewportTest {
         private final RecyclerView recycler;
         private final LinearLayoutManager layout;
         private final PlayQueueItemTouchCallback callback;
+        private Runnable pendingMove;
 
         Fixture() {
             this(0, 0);
         }
 
         Fixture(final int topMargin, final int paddingTop) {
+            this(topMargin, paddingTop, false);
+        }
+
+        Fixture(final int topMargin, final int paddingTop, final boolean deferMoveNotification) {
             final Context context = InstrumentationRegistry.getInstrumentation()
                     .getTargetContext();
             recycler = new RecyclerView(context);
@@ -137,7 +196,11 @@ public class PlayQueueViewportTest {
                 @Override
                 public void onMove(final int from, final int to) {
                     items.add(to, items.remove(from));
-                    adapter.notifyItemMoved(from, to);
+                    if (deferMoveNotification) {
+                        pendingMove = () -> adapter.notifyItemMoved(from, to);
+                    } else {
+                        adapter.notifyItemMoved(from, to);
+                    }
                 }
 
                 @Override

@@ -5363,8 +5363,7 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
 
             // Enable/disable the video track and the ability to select subtitles
             parametersBuilder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !videoEnabled);
-            parametersBuilder.setTrackTypeDisabled(
-                    C.TRACK_TYPE_VIDEO, !videoEnabled && !isCurrentStreamSabr());
+            parametersBuilder.setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !videoEnabled);
 
             trackSelector.setParameters(parametersBuilder);
         }

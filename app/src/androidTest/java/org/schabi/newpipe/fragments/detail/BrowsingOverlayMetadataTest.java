@@ -119,7 +119,7 @@ public class BrowsingOverlayMetadataTest {
         return new StreamInfoItem(0, url, url, StreamType.VIDEO_STREAM);
     }
 
-    private static void setField(final Class<?> type, final Object object,
+    static void setField(final Class<?> type, final Object object,
                                  final String name, final Object value)
             throws ReflectiveOperationException {
         final Field field = type.getDeclaredField(name);
@@ -127,14 +127,14 @@ public class BrowsingOverlayMetadataTest {
         field.set(object, value);
     }
 
-    private static Object getField(final Class<?> type, final Object object, final String name)
+    static Object getField(final Class<?> type, final Object object, final String name)
             throws ReflectiveOperationException {
         final Field field = type.getDeclaredField(name);
         field.setAccessible(true);
         return field.get(object);
     }
 
-    private static final class ContextService extends Service {
+    static final class ContextService extends Service {
         ContextService(final Context context) {
             attachBaseContext(context);
         }

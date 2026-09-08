@@ -216,6 +216,7 @@ public final class VideoDetailFragment
     // Keep an explicit navigation request separate from asynchronous active-queue updates.
     @Nullable
     private PlayQueue pendingPlaybackQueue;
+    private boolean pendingDirectFullscreen;
     int bottomSheetState = BottomSheetBehavior.STATE_EXPANDED;
     protected boolean autoPlayEnabled = true;
     SponsorBlockMode currentSponsorBlockMode = null;
@@ -362,6 +363,7 @@ public final class VideoDetailFragment
         outState.putString("url", url);
         outState.putInt("bottomSheetState", sanitizeBottomSheetState(bottomSheetState));
         outState.putBoolean("autoPlayEnabled", autoPlayEnabled);
+        outState.putBoolean("pendingDirectFullscreen", pendingDirectFullscreen);
         if (pendingPlaybackQueue != null) {
             outState.putString("pendingPlaybackQueue", SerializedCache.getInstance()
                     .put(pendingPlaybackQueue, PlayQueue.class));
@@ -378,6 +380,7 @@ public final class VideoDetailFragment
         bottomSheetState = sanitizeBottomSheetState(savedInstanceState.getInt(
                 "bottomSheetState", BottomSheetBehavior.STATE_EXPANDED));
         autoPlayEnabled = savedInstanceState.getBoolean("autoPlayEnabled", true);
+        pendingDirectFullscreen = savedInstanceState.getBoolean("pendingDirectFullscreen", false);
         final String pendingQueueKey = savedInstanceState.getString("pendingPlaybackQueue");
         pendingPlaybackQueue = pendingQueueKey == null ? null
                 : SerializedCache.getInstance().get(pendingQueueKey, PlayQueue.class);
@@ -939,6 +942,7 @@ public final class VideoDetailFragment
     }
 
     private void setupFromHistoryItem(final StackItem item) {
+        pendingDirectFullscreen = false;
         pendingPlaybackQueue = null;
         setAutoPlay(false);
         setInitialData(item.getServiceId(), item.getUrl(),
@@ -991,6 +995,7 @@ public final class VideoDetailFragment
             continueAudioAndDetachMainPlayerForBrowsing();
         }
 
+        pendingDirectFullscreen = false;
         setInitialData(newServiceId, newUrl, newTitle, newQueue);
         pendingPlaybackQueue = newQueue;
         startLoading(false, true);
@@ -1395,6 +1400,7 @@ public final class VideoDetailFragment
     }
 
     private void prepareMainPlayerUi(final boolean directlyFullscreenIfApplicable) {
+        pendingDirectFullscreen = directlyFullscreenIfApplicable;
         if (directlyFullscreenIfApplicable) {
             // Make sure the bottom sheet turns out expanded. When this code kicks in the bottom
             // sheet could not have fully expanded yet, and thus be in the STATE_SETTLING state.
@@ -1404,11 +1410,16 @@ public final class VideoDetailFragment
             // STATE_COLLAPSED. This can be solved by manually setting the state that will be
             // restored (i.e. bottomSheetState) to STATE_EXPANDED.
             bottomSheetState = BottomSheetBehavior.STATE_EXPANDED;
-            if (isPlayerAvailable()) {
-                PlayerUiModeHelper.setFullscreen(player, true);
-            } else {
-                // TODO: preserve the fullscreen request until the Player service is connected.
-            }
+            applyPendingFullscreen();
+        }
+    }
+
+    private void applyPendingFullscreen() {
+        if (pendingDirectFullscreen && binding != null && isPlayerAvailable()
+                && player.videoPlayerSelected()) {
+            PlayerUiModeHelper.setFullscreen(player, true);
+            // Player can reject the request until ExoPlayer and the fragment listener are ready.
+            pendingDirectFullscreen = !player.isFullscreen();
         }
     }
 
@@ -2346,6 +2357,10 @@ public final class VideoDetailFragment
                                  final int repeatMode,
                                  final boolean shuffled,
                                  final PlaybackParameters parameters) {
+        if (binding == null) {
+            return;
+        }
+        applyPendingFullscreen();
         setOverlayPlayPauseImage(player != null && player.isPlaying());
 
         switch (state) {
@@ -2439,6 +2454,7 @@ public final class VideoDetailFragment
 
     @Override
     public void onServiceStopped() {
+        pendingDirectFullscreen = false;
         if (binding != null) {
             setOverlayPlayPauseImage(false);
             if (currentInfo != null) {
@@ -2668,6 +2684,7 @@ public final class VideoDetailFragment
         }
         playerHolder.stopService();
         pendingPlaybackQueue = null;
+        pendingDirectFullscreen = false;
         setInitialData(0, null, "", null);
         currentInfo = null;
         updateOverlayData(null, null, null);

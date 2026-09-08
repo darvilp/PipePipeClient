@@ -40,8 +40,12 @@ with zipfile.ZipFile(args.apk) as archive:
 require(native_abis == {args.abi}, f'Unexpected native ABIs: {sorted(native_abis)}')
 subprocess.run([str(build_tools / 'zipalign'), '-c', '-P', '16', '4', str(args.apk)], check=True)
 certificates = output(build_tools / 'apksigner', 'verify', '--verbose', '--print-certs', args.apk)
-signers = re.findall(r'Signer #\d+ certificate SHA-256 digest: (\w+)', certificates)
-require(signers == [manifest['signer_sha256']], 'APK signer does not match the established all-features signer')
+signers = re.findall(
+    r'^(?:Signer #\d+|V\d+(?:\.\d+)? Signer(?: #\d+)?):? certificate SHA-256 digest: ([0-9a-f]{64})$',
+    certificates, re.MULTILINE)
+require(re.search(r'^Number of signers: 1$', certificates, re.MULTILINE) is not None
+        and set(signers) == {manifest['signer_sha256']},
+        'APK signer does not match the established all-features signer')
 with args.apk.open('rb') as stream:
     apk_sha256 = hashlib.file_digest(stream, 'sha256').hexdigest()
 record = {

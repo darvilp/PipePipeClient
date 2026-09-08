@@ -2443,6 +2443,10 @@ public final class VideoDetailFragment
             item.setTitle(info.getName());
             item.setUrl(info.getUrl());
         }
+        if (queue.equals(playQueue) || (player != null && player.videoPlayerSelected())) {
+            // The main-player overlay follows playback even while details show another video.
+            updateOverlayData(info.getName(), info.getUploaderName(), info.getThumbnailUrl());
+        }
         // They are not equal when user watches something in popup while browsing in fragment and
         // then changes screen orientation. In that case the fragment will set itself as
         // a service listener and will receive initial call to onMetadataUpdate()
@@ -2450,7 +2454,6 @@ public final class VideoDetailFragment
             return;
         }
 
-        updateOverlayData(info.getName(), info.getUploaderName(), info.getThumbnailUrl());
         if (currentInfo != null && info.getUrl().equals(currentInfo.getUrl())) {
             return;
         }

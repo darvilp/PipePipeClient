@@ -26,6 +26,18 @@ import java.util.List;
 @RunWith(AndroidJUnit4.class)
 public class PlayQueueViewportTest {
     @Test
+    public void downwardMovePreservesMarginsAndPadding() {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            final Fixture fixture = new Fixture(9, 17);
+            fixture.scrollTo(4, -20);
+            final int top = fixture.layout.findViewByPosition(4).getTop();
+            fixture.move(4, 5);
+            assertEquals(4, fixture.layout.findFirstVisibleItemPosition());
+            assertEquals(top, fixture.layout.findViewByPosition(4).getTop());
+        });
+    }
+
+    @Test
     public void firstVisibleDownwardMoveKeepsViewportAndMovesItemExactlyOnce() {
         InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
             final Fixture fixture = new Fixture();
@@ -81,9 +93,14 @@ public class PlayQueueViewportTest {
         private final PlayQueueItemTouchCallback callback;
 
         Fixture() {
+            this(0, 0);
+        }
+
+        Fixture(final int topMargin, final int paddingTop) {
             final Context context = InstrumentationRegistry.getInstrumentation()
                     .getTargetContext();
             recycler = new RecyclerView(context);
+            recycler.setPadding(0, paddingTop, 0, 0);
             layout = new LinearLayoutManager(context);
             recycler.setLayoutManager(layout);
             recycler.setItemAnimator(null);
@@ -97,7 +114,10 @@ public class PlayQueueViewportTest {
                         public RecyclerView.ViewHolder onCreateViewHolder(
                                 @NonNull final ViewGroup parent, final int viewType) {
                             final TextView row = new TextView(context);
-                            row.setLayoutParams(new RecyclerView.LayoutParams(360, 120));
+                            final RecyclerView.LayoutParams params =
+                                    new RecyclerView.LayoutParams(360, 120);
+                            params.topMargin = topMargin;
+                            row.setLayoutParams(params);
                             return new RecyclerView.ViewHolder(row) { };
                         }
 

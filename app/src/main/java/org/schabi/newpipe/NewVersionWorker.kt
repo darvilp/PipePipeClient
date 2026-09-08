@@ -12,6 +12,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.preference.PreferenceManager
+import androidx.work.Operation
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.Worker
@@ -177,6 +178,7 @@ class NewVersionWorker(
 
 
     override fun doWork(): Result {
+        if (BuildConfig.UNOFFICIAL_BUILD) return Result.success()
         return try {
             checkNewVersion()
             Result.success()
@@ -195,6 +197,14 @@ class NewVersionWorker(
         private val RELEASE_APK_ABIS = listOf("armeabi-v7a", "arm64-v8a", "x86_64", "x86")
         private const val NEWPIPE_API_URL = "https://api.github.com/repositories/490984887/releases"
         private const val IS_MANUAL = "isManual"
+        // Existing debug builds persisted this un-obfuscated worker-class tag.
+        private const val LEGACY_UPDATE_TAG = "org.schabi.newpipe.NewVersionWorker"
+
+        @JvmStatic
+        fun cancelOfficialUpdateWork(context: Context): Operation {
+            NotificationManagerCompat.from(context).cancel(2000)
+            return WorkManager.getInstance(context).cancelAllWorkByTag(LEGACY_UPDATE_TAG)
+        }
 
         private fun getReleaseApkAbi(name: String): String? {
             return RELEASE_APK_ABIS.firstOrNull { name.contains("-$it-") }
@@ -214,6 +224,10 @@ class NewVersionWorker(
          */
         @JvmStatic
         fun enqueueNewVersionCheckingWork(context: Context, isManual: Boolean) {
+            if (BuildConfig.UNOFFICIAL_BUILD) {
+                cancelOfficialUpdateWork(context)
+                return
+            }
             val workRequest = OneTimeWorkRequestBuilder<NewVersionWorker>()
                 .setInputData(workDataOf(IS_MANUAL to isManual))
                 .build()

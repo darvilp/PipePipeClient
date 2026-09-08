@@ -10,8 +10,8 @@ def keyPath = System.getenv("KEY_PATH")
 def keyStorePassword = System.getenv("KEY_STORE_PASSWORD")
 def signingKeyAlias = System.getenv("KEY_ALIAS")
 def signingKeyPassword = System.getenv("KEY_PASSWORD")
-def baseVersionCode = 1107
-def appVersionName = "5.3.1-beta"
+def baseVersionCode = 1108
+def appVersionName = "5.3.1-beta-unofficial.1"
 def abiCodes = ['armeabi-v7a': 1, 'x86': 2, 'x86_64': 3, 'arm64-v8a': 4]
 def stableBuildConfigVersionCode =
         (100 * baseVersionCode) + abiCodes['armeabi-v7a']
@@ -26,6 +26,7 @@ android {
         targetSdk 36
         versionCode baseVersionCode
         versionName appVersionName
+        buildConfigField "boolean", "UNOFFICIAL_BUILD", "true"
         multiDexEnabled true
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -64,29 +65,17 @@ android {
         debug {
             debuggable true
 
-            // suffix the app id and the app name with git branch name
-            def workingBranch = getGitWorkingBranch()
-            def normalizedWorkingBranch = workingBranch.replaceFirst("^[^A-Za-z]+", "").replaceAll("[^0-9A-Za-z]+", "")
-            if (true) {
-                // default values when branch name could not be determined or is master or dev
-                applicationIdSuffix ".debug.allfeatures"
-                resValue "string", "app_name", "PipePipe All Features"
-            } else {
-                applicationIdSuffix ".debug." + normalizedWorkingBranch
-                resValue "string", "app_name", "PipePipe " + workingBranch
-            }
+            applicationIdSuffix ".debug.allfeatures"
+            resValue "string", "app_name", "PipePipe All Features (Unofficial)"
         }
 
         release {
             if (signingConfigs.findByName("release")) {
                 signingConfig signingConfigs.release
             }
-            if (System.properties.containsKey('packageSuffix')) {
-                applicationIdSuffix System.getProperty('packageSuffix')
-                resValue "string", "app_name", "PipePipe " + System.getProperty('packageSuffix')
-            } else {
-                resValue "string", "app_name", "PipePipe"
-            }
+            debuggable false
+            applicationIdSuffix ".debug.allfeatures"
+            resValue "string", "app_name", "PipePipe All Features (Unofficial)"
             minifyEnabled true
             shrinkResources false // disabled to fix F-Droid's reproducible build
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -305,20 +294,4 @@ dependencies {
     androidTestImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'org.bouncycastle:bcprov-jdk18on:1.85'
     androidTestImplementation "androidx.room:room-testing:${androidxRoomVersion}"
-}
-
-static String getGitWorkingBranch() {
-    try {
-        def gitProcess = "git rev-parse --abbrev-ref HEAD".execute()
-        gitProcess.waitFor()
-        if (gitProcess.exitValue() == 0) {
-            return gitProcess.text.trim()
-        } else {
-            // not a git repository
-            return ""
-        }
-    } catch (IOException ignored) {
-        // git was not found
-        return ""
-    }
 }

@@ -250,15 +250,17 @@ public class MainActivity extends AppCompatActivity {
 
         int isFirstRun = prefs.getInt("isFirstRun", 0);
         if (isFirstRun == 0) {
-            AlertDialog.Builder builder = new AlertDialog.Builder(this);
-            builder.setTitle(R.string.dialog_title_enable_update_checker);
-            builder.setMessage(R.string.dialog_message_enable_update_checker);
-            builder.setPositiveButton(R.string.ok, (dialog, which) -> {
-                prefs.edit().putBoolean(app.getString(R.string.update_app_key), true).apply();
-                NewVersionWorker.enqueueNewVersionCheckingWork(app, true);
-            });
-            builder.setNegativeButton(R.string.no, (dialog, which) -> prefs.edit().putBoolean(app.getString(R.string.update_app_key), false).apply());
-            builder.show();
+            if (!BuildConfig.UNOFFICIAL_BUILD) {
+                AlertDialog.Builder builder = new AlertDialog.Builder(this);
+                builder.setTitle(R.string.dialog_title_enable_update_checker);
+                builder.setMessage(R.string.dialog_message_enable_update_checker);
+                builder.setPositiveButton(R.string.ok, (dialog, which) -> {
+                    prefs.edit().putBoolean(app.getString(R.string.update_app_key), true).apply();
+                    NewVersionWorker.enqueueNewVersionCheckingWork(app, true);
+                });
+                builder.setNegativeButton(R.string.no, (dialog, which) -> prefs.edit().putBoolean(app.getString(R.string.update_app_key), false).apply());
+                builder.show();
+            }
             prefs.edit().putInt("isFirstRun", 1).apply();
             PermissionChecker.checkNotificationPermission(this);
         }

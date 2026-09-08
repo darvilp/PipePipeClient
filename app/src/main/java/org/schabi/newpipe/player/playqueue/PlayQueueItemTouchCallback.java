@@ -48,6 +48,7 @@ public abstract class PlayQueueItemTouchCallback extends ItemDragTouchHelperCall
                 // Capture it anew for each swap so edge scrolling remains free to advance it.
                 pendingAnchorPosition = firstVisiblePosition;
                 pendingAnchorOffset = linearLayoutManager.getDecoratedTop(firstVisibleView)
+                        - ((RecyclerView.LayoutParams) firstVisibleView.getLayoutParams()).topMargin
                         - recyclerView.getPaddingTop();
             }
         }

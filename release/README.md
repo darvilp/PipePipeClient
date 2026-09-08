@@ -55,12 +55,12 @@ Keep previous releases and local APK copies. A safe rollback may require rebuild
 
 ## Repeat the controlled upgrade probe
 
-`UnofficialReleaseUpgradeTest` is skipped in ordinary test runs. Use it only on a disposable acceptance device: it adds one clearly named subscription and local playlist and sets speed, pitch and theme preferences.
+`UnofficialReleaseUpgradeProbe` is separate from ordinary test runs. It uses Android framework instrumentation so test-library references do not conflict with the minified app. Use it only on a disposable acceptance device: it adds one clearly named subscription and local playlist and sets speed, pitch and theme preferences.
 
 1. Install and launch the older all-features APK with the established signer.
-2. Build the Android test APK and sign a separate copy with that same signer. Install the test APK on the acceptance device.
-3. Run only `org.schabi.newpipe.release.UnofficialReleaseUpgradeTest` through `AndroidJUnitRunner`, with instrumentation argument `releaseUpgradePhase=seed`.
+2. Build the probe APK with `./gradlew :app:assembleDebugAndroidTest -PunofficialUpgradeProbe=true` and sign a separate copy with that same signer. Ordinary test builds omit that property and use AndroidJUnitRunner. Install the test APK on the acceptance device.
+3. Run `adb -s <device> shell am instrument -w -e releaseUpgradePhase seed InfinityLoop1309.NewPipeEnhanced.debug.allfeatures.test/org.schabi.newpipe.release.UnofficialReleaseUpgradeProbe`. Require `Release upgrade seed: PASS` in the result.
 4. Install the verified release APK with `adb install -r`, without uninstalling or clearing the target app. Launch the upgraded app.
-5. Run the same class with `releaseUpgradePhase=verify`. It checks the non-debuggable release version, retained subscription, playlist, speed, pitch and theme, and the legacy worker's public constructor through the release class loader.
+5. Run the same instrument with `-e releaseUpgradePhase verify` and require `Release upgrade verify: PASS`. It checks the non-debuggable release version, retained subscription, playlist, speed, pitch and theme, and the legacy worker's public constructor through the release class loader.
 
 The test checks controlled persisted records; it does not establish playback quality, queue touch behavior on hardware, or preservation of every possible user configuration. Always target the intended device explicitly with `adb -s`.

@@ -29,7 +29,10 @@ android {
         buildConfigField "boolean", "UNOFFICIAL_BUILD", "true"
         multiDexEnabled true
 
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner providers.gradleProperty("unofficialUpgradeProbe")
+                .map { it.toBoolean() }.getOrElse(false)
+                ? "org.schabi.newpipe.release.UnofficialReleaseUpgradeProbe"
+                : "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         javaCompileOptions {
             annotationProcessorOptions {

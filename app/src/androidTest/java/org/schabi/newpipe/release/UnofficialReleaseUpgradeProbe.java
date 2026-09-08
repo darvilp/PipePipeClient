@@ -1,32 +1,63 @@
 package org.schabi.newpipe.release;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-
+import android.app.Activity;
+import android.app.Instrumentation;
+import android.os.Bundle;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 
-import androidx.test.ext.junit.runners.AndroidJUnit4;
-import androidx.test.platform.app.InstrumentationRegistry;
+/** Explicit two-install probe using framework instrumentation to avoid minified-library conflicts. */
+public class UnofficialReleaseUpgradeProbe extends Instrumentation {
+    private String phase;
 
-import org.junit.Assume;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+    @Override
+    public void onCreate(final Bundle arguments) {
+        super.onCreate(arguments);
+        phase = arguments.getString("releaseUpgradePhase", "");
+        start();
+    }
 
-/** Explicit two-install acceptance probe. Skipped during ordinary regression runs. */
-@RunWith(AndroidJUnit4.class)
-public class UnofficialReleaseUpgradeTest {
+    @Override
+    public void onStart() {
+        final Bundle result = new Bundle();
+        try {
+            if ("seed".equals(phase)) {
+                seedOlderInstallation();
+            } else if ("verify".equals(phase)) {
+                signedReleasePreservesOlderInstallation();
+            } else {
+                throw new IllegalArgumentException("Specify releaseUpgradePhase=seed or verify");
+            }
+            result.putString("stream", "Release upgrade " + phase + ": PASS\n");
+            finish(Activity.RESULT_OK, result);
+        } catch (Exception | AssertionError failure) {
+            result.putString("stream", "Release upgrade " + phase + ": FAIL " + failure + "\n");
+            finish(Activity.RESULT_CANCELED, result);
+        }
+    }
+
+    private static void assertTrue(final String message, final boolean condition) {
+        if (!condition) {
+            throw new AssertionError(message);
+        }
+    }
+
+    private static void assertTrue(final boolean condition) {
+        assertTrue("Expected true", condition);
+    }
+
+    private static void assertEquals(final Object expected, final Object actual) {
+        assertTrue("Expected " + expected + ", got " + actual, expected.equals(actual));
+    }
+
     private static final String CHANNEL_URL = "https://example.invalid/release-upgrade-channel";
     private static final String PLAYLIST_NAME = "Release upgrade acceptance fixture";
 
-    private Context contextForPhase(final String phase) {
-        Assume.assumeTrue(phase.equals(InstrumentationRegistry.getArguments()
-                .getString("releaseUpgradePhase")));
-        final Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+    private Context targetContext() {
+        final Context context = getTargetContext();
         assertEquals("InfinityLoop1309.NewPipeEnhanced.debug.allfeatures", context.getPackageName());
         return context;
     }
@@ -36,9 +67,8 @@ public class UnofficialReleaseUpgradeTest {
                 Context.MODE_PRIVATE);
     }
 
-    @Test
     public void seedOlderInstallation() {
-        final Context context = contextForPhase("seed");
+        final Context context = targetContext();
         assertTrue("Launch the older app first", context.getDatabasePath("newpipe.db").exists());
         try (SQLiteDatabase database = SQLiteDatabase.openDatabase(
                 context.getDatabasePath("newpipe.db").getPath(), null, SQLiteDatabase.OPEN_READWRITE)) {
@@ -54,17 +84,16 @@ public class UnofficialReleaseUpgradeTest {
                 .putBoolean("release_upgrade_fixture", true).commit());
     }
 
-    @Test
     public void signedReleasePreservesOlderInstallation() throws Exception {
-        final Context context = contextForPhase("verify");
-        assertFalse("Must exercise the actual release variant",
-                (context.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0);
+        final Context context = targetContext();
+        assertTrue("Must exercise the actual release variant",
+                (context.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) == 0);
         assertEquals("5.3.1-beta-unofficial.1", context.getPackageManager()
                 .getPackageInfo(context.getPackageName(), 0).versionName);
         assertTrue("The older-install phase must run before upgrading",
                 preferences(context).getBoolean("release_upgrade_fixture", false));
-        assertEquals(1.25f, preferences(context).getFloat("playback_speed_key", 0f), 0f);
-        assertEquals(0.9f, preferences(context).getFloat("playback_pitch_key", 0f), 0f);
+        assertEquals(1.25f, preferences(context).getFloat("playback_speed_key", 0f));
+        assertEquals(0.9f, preferences(context).getFloat("playback_pitch_key", 0f));
         assertEquals("dark_theme", preferences(context).getString("theme", ""));
         try (SQLiteDatabase database = SQLiteDatabase.openDatabase(
                 context.getDatabasePath("newpipe.db").getPath(), null, SQLiteDatabase.OPEN_READONLY);
@@ -75,7 +104,7 @@ public class UnofficialReleaseUpgradeTest {
             assertEquals(1, subscription.getCount());
             assertTrue(subscription.moveToFirst());
             assertEquals("Release upgrade channel", subscription.getString(0));
-            assertEquals(42, subscription.getLong(1));
+            assertEquals(42L, subscription.getLong(1));
             assertEquals(1, playlist.getCount());
         }
         final Class<?> worker = Class.forName("org.schabi.newpipe.NewVersionWorker", true,

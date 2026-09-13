@@ -1,23 +1,22 @@
-# PipePipe All Features 5.3.1-beta-unofficial.2
+# PipePipe All Features 5.3.1-beta-unofficial.3
 
-Unofficial prerelease candidate from the darvilp fork. It retains the completed all-features integration: queue enqueue/play actions, browsing without replacing playback, nonblocking refresh, fullscreen controls and subscription-group content rules.
+Unofficial candidate from the darvilp fork. This build restores switching between main, background, and popup playback while retaining the current session. It includes the previous all-features queue, browsing, playlist, and fullscreen corrections.
 
-## Corrections
+## Restored player switching
 
-- Fix immediate runaway reordering when dragging the first queue row down in the separate queue. The viewport anchor now waits for the asynchronous adapter move notification. A real player-service regression reproduced 44 swaps from a one-row gesture before the fix and one swap afterward. The existing edge-scroll speed curve is unchanged.
+- The separate queue's overflow menu offers the two alternative playback modes. Popup and background selections keep the queue screen open; main playback returns to the active item.
+- Switching retains the player, queue, selected item, position, play/pause intent, and current playback settings. A paused or buffering session does not resume merely because its mode changed.
+- Expanding the popup returns to fullscreen main playback without stopping the service. Popup windows and the close overlay are removed before the player view changes owner.
+- Returning to main uses the active queue rather than a different video or replacement playlist being browsed. Newer requests supersede delayed navigation.
+- Compatible sources are reused. A necessary audio/video source change restores the captured position and video controls, including when background playback began with an audio-only source.
+- Paused quality controls update when a new quality source is prepared, so the displayed selection matches playback before and after switching.
 
-- Keep the queue viewport stable when dragging the first visible item down. Reversing after reaching the top no longer retains an anchor that undoes later edge scrolling. Row margins are included in the saved viewport offset.
-- Preserve an explicitly requested playlist through service callbacks, including when its selected video is already playing. Passive browsing still retains the active queue.
-- Update the main-player overlay as playback advances while unrelated details remain open.
-- Retain a direct-fullscreen request until the player and listener are ready, and consume it after fullscreen is entered.
-- Add Room regression coverage showing that normal refresh already repairs migrated Shorts classifications while preserving same-refresh classifications and group overrides. No database behavior or schema change was needed for that review item.
+## Continuity and acceptance
+
+A brief buffering gap is accepted when changing the required source. Gapless audio across every source type is not promised. The validation record separates deterministic emulator tests, online source checks, and physical acceptance of the exact signed artifact. Any unverified case remains unverified; this candidate is not publication approval.
 
 ## Installation and updates
 
-This candidate uses the existing all-features application ID and established signing certificate, with arm64 version code `110904`. Its release variant is not debuggable. The app label explicitly identifies the unofficial build. Download future updates from the darvilp release page in Settings; automatic official updates are disabled and old official update jobs are cancelled.
+The candidate retains the established all-features application ID and signer. Its version name is `5.3.1-beta-unofficial.3`, with arm64 version code `111004`; the minified release variant is not debuggable. Updates remain manual through the fork's releases page, with official automatic updates disabled.
 
-## Validation and known limits
-
-Regression coverage includes actual Android queue layout/touch-helper behavior, fragment callbacks and Room migration/refresh. The original lint backlog remains; the release script rejects new error/fatal findings relative to the recorded integration baseline. See the candidate's validation record for tests performed against its exact APK hash, including device upgrade and playback acceptance.
-
-The previous SABR hidden-player diagnostic is removed because it was not established as a fix. The reported hidden-playback issue is not claimed to be resolved. Physical-device and minified-release acceptance must be recorded separately from debug regression results.
+Native Android PiP, a new playback engine, and broader hidden-playback or Android Auto handoff fixes are outside this change.

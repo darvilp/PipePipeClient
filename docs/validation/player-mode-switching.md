@@ -8,7 +8,7 @@ Switching keeps the existing service, ExoPlayer, queue and adapter. Necessary so
 
 ## Deterministic results
 
-Debug app and instrumentation APK assembly passed with JDK 25 and the existing Gradle wrapper. On a disposable API 36.1 x86_64 emulator, all **88 regression tests passed** (146.708 seconds): 27 switching tests and 61 existing browsing, queue-action, pending-replacement, enqueue, viewport, continuous-gesture, metadata, fullscreen, insert-next and drag-scroll tests. All **17 applicable JVM tests passed**, with no failures, errors or skips.
+Debug app and instrumentation APK assembly passed with JDK 25 and the existing Gradle wrapper. On a disposable API 36.1 x86_64 emulator, all **89 regression tests passed** (163.25 seconds): 28 switching tests and 61 existing browsing, queue-action, pending-replacement, enqueue, viewport, continuous-gesture, metadata, fullscreen, insert-next and drag-scroll tests. All **17 applicable JVM tests passed**, with no failures, errors or skips.
 
 The switching tests exercise all six directions while playing, paused and genuinely buffering. Cached metadata, generated media and a gated localhost HTTP server make these cases independent of external streams. Assertions cover service/player/queue/adapter identity, selected item and ordering, intent, settings, source reuse or replacement, recovery positions and final surface ownership. Position drift allows at most one second after accounting for playback elapsed. Paused recovery retains 7000 ms even with the always-start-at-beginning preference enabled.
 
@@ -20,9 +20,15 @@ A paused quality-selection regression was separately reproduced before the bound
 
 Debug lint completed with 1,237 existing error/fatal findings and **zero new error/fatal findings**, compared by issue, message, path and count against the unchanged release baseline. This is not a clean lint result.
 
+## Signed-candidate rotation finding
+
+The first signed unofficial.3 candidate passed its build, lint, artifact and in-place upgrade checks, but was held during UI acceptance. After collapsing main playback into the mini-player, opening the separate queue, cycling modes and expanding popup, rotation restored a negative app-bar offset that hid the attached fullscreen video. The same sequence reproduced in debug: the video was 720 pixels high while its app bar sat at -775 pixels. The exact unofficial.2 baseline rendered paused main fullscreen correctly under the same theme and playback preferences.
+
+A regression following the actual bottom-sheet and queue navigation path failed with an app-bar offset of -783 pixels. An earlier test using ordinary app-bar scrolling passed, so that fixture was replaced with the actual mini-player sequence. The repair forces the active fullscreen main player's app bar expanded after view-state restoration, without animation or playback changes. The focused regression then passed in 11.551 seconds, followed by all 89 regression cases. Independent review approved the bounded lifecycle change.
+
 ## Online source results
 
-The opt-in production-service probe passed for actual **SABR** and **PROGRESSIVE_HTTP** delivery, using the extractor's mweb and visionos clients respectively. Each run exercised all six directions both playing and paused, an audio-origin return to video/popup, an alternative video quality, available external subtitle sources, and screen-off background playback followed by return. The SABR run selected 144p and retained the available TTML subtitle source. This does not establish subtitle rendering or alternate-language audio coverage when the sample has no such selectable track.
+After the fullscreen restoration repair, the opt-in production-service probe passed again for actual **SABR** and **PROGRESSIVE_HTTP** delivery, using the extractor's mweb and visionos clients respectively. Each run exercised all six directions both playing and paused, an audio-origin return to video/popup, an alternative video quality, available external subtitle sources, and screen-off background playback followed by return. The SABR run selected 144p and retained the available TTML subtitle source. This does not establish subtitle rendering or alternate-language audio coverage when the sample has no such selectable track.
 
 Run with the debug app and ordinary instrumentation APK on a disposable device:
 

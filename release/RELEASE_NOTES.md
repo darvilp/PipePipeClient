@@ -6,7 +6,7 @@ Unofficial candidate from the darvilp fork. This build restores switching betwee
 
 - The separate queue's overflow menu offers the two alternative playback modes. Popup and background selections keep the queue screen open; main playback returns to the active item.
 - Switching retains the player, queue, selected item, position, play/pause intent, and current playback settings. A paused or buffering session does not resume merely because its mode changed.
-- Expanding the popup returns to fullscreen main playback without stopping the service. Popup windows and the close overlay are removed before the player view changes owner.
+- Expanding the popup returns to fullscreen main playback without stopping the service. Popup windows and the close overlay are removed before the player view changes owner. Fullscreen return restores the visible video after rotation from the mini-player.
 - Returning to main uses the active queue rather than a different video or replacement playlist being browsed. Newer requests supersede delayed navigation.
 - Compatible sources are reused. A necessary audio/video source change restores the captured position and video controls, including when background playback began with an audio-only source.
 - Paused quality controls update when a new quality source is prepared, so the displayed selection matches playback before and after switching.

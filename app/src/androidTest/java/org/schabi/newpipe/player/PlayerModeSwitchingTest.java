@@ -80,7 +80,8 @@ public class PlayerModeSwitchingTest {
             final String selectedTab = context.getString(R.string.stream_info_selected_tab_key);
             for (final String key : Arrays.asList(sponsor, tabs, selectedTab,
                     context.getString(R.string.always_start_from_beginning_key),
-                    context.getString(R.string.start_main_player_fullscreen_key))) {
+                    context.getString(R.string.start_main_player_fullscreen_key),
+                    context.getString(R.string.rotate_fullscreen_to_video_orientation_key))) {
                 savedPreferences.put(key, preferences.getAll().get(key));
             }
             preferences.edit().putBoolean(sponsor, false)
@@ -367,6 +368,89 @@ public class PlayerModeSwitchingTest {
             assertSame(manager, field(original, "playQueueManager"));
             assertFalse(original.getPlayWhenReady());
         });
+    }
+
+    @Test
+    public void popupExpansionShowsVideoAfterCollapsedMiniPlayerCycleAndRotation() throws Exception {
+        start(PlayerType.AUDIO);
+        final Player original = activity.player;
+        instrumentation.runOnMainSync(() -> PreferenceManager.getDefaultSharedPreferences(main)
+                .edit().putBoolean(main.getString(
+                        R.string.rotate_fullscreen_to_video_orientation_key), true).commit());
+        selectMode(PlayerType.VIDEO);
+        await(() -> original.videoPlayerSelected() && original.getParentActivity() != null,
+                "Main attached before scrolling");
+        instrumentation.runOnMainSync(() -> original.getParentActivity().setRequestedOrientation(
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));
+        await(() -> original.getParentActivity() != null
+                && original.getParentActivity().getResources().getConfiguration().orientation
+                == android.content.res.Configuration.ORIENTATION_PORTRAIT, "Portrait main");
+        final Activity beforeExpansion = original.getParentActivity();
+        final Object engine = original.simpleExoPlayer;
+        final PlayQueue queue = original.getPlayQueue();
+        collapseMainAndOpenQueue(original);
+        for (final PlayerType target : new PlayerType[]{PlayerType.POPUP, PlayerType.AUDIO,
+                PlayerType.VIDEO, PlayerType.AUDIO, PlayerType.POPUP}) {
+            selectMode(target);
+            await(() -> original.getPlayerType() == target
+                    && original.simpleExoPlayer.getPlaybackState()
+                    == com.google.android.exoplayer2.Player.STATE_READY, "Prepared " + target);
+            if (target == PlayerType.VIDEO) {
+                await(() -> original.getParentActivity() != null, "Main returned");
+                collapseMainAndOpenQueue(original);
+            }
+        }
+        instrumentation.runOnMainSync(() -> original.getBinding().fullScreenButton.performClick());
+        await(() -> original.videoPlayerSelected() && original.isFullscreen()
+                && original.getParentActivity() != null
+                && original.getParentActivity() != beforeExpansion
+                && original.getParentActivity().getResources().getConfiguration().orientation
+                == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                && original.getSurfaceView().getHeight() > 0
+                && "First fixture".contentEquals(((android.widget.TextView)
+                        original.getParentActivity().findViewById(R.id.detail_video_title_view))
+                        .getText()), "Fullscreen main recreated with details in landscape");
+        instrumentation.waitForIdleSync();
+        instrumentation.runOnMainSync(() -> {
+            final Activity host = original.getParentActivity();
+            final android.graphics.Rect visible = new android.graphics.Rect();
+            final boolean videoVisible = original.getSurfaceView().getGlobalVisibleRect(visible);
+            final int windowHeight = host.getWindow().getDecorView().getHeight();
+            assertTrue("Fullscreen video must occupy the visible window after recreation: rect="
+                    + visible + ", windowHeight=" + windowHeight + ", appBarTop="
+                    + host.findViewById(R.id.app_bar_layout).getTop(),
+                    videoVisible && visible.height() >= windowHeight * 0.9);
+            assertSame(host.findViewById(R.id.player_placeholder),
+                    original.getRootView().getParent());
+            assertSame(engine, original.simpleExoPlayer);
+            assertSame(queue, original.getPlayQueue());
+            assertFalse(original.getPlayWhenReady());
+        });
+    }
+
+    private void collapseMainAndOpenQueue(final Player original) {
+        final Activity host = original.getParentActivity();
+        final com.google.android.material.bottomsheet.BottomSheetBehavior<android.view.View> sheet =
+                com.google.android.material.bottomsheet.BottomSheetBehavior.from(
+                        host.findViewById(R.id.fragment_player_holder));
+        instrumentation.runOnMainSync(() -> sheet.setState(
+                com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED));
+        await(() -> sheet.getState()
+                == com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED
+                && host.findViewById(R.id.app_bar_layout).getTop() < 0,
+                "Mini-player collapsed with its app-bar offset");
+        instrumentation.runOnMainSync(() -> assertTrue(host.findViewById(
+                R.id.overlay_play_queue_button).performClick()));
+        await(() -> {
+            for (final Activity candidate : ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(Stage.RESUMED)) {
+                if (candidate instanceof PlayQueueActivity) {
+                    activity = (PlayQueueActivity) candidate;
+                    return activity.player == original;
+                }
+            }
+            return false;
+        }, "Mini-player queue resumed and bound");
     }
 
     @Test

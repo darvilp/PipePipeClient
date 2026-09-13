@@ -748,6 +748,17 @@ public final class VideoDetailFragment
         super.onViewCreated(rootView, savedInstanceState);
     }
 
+    @Override
+    public void onViewStateRestored(@Nullable final Bundle savedInstanceState) {
+        super.onViewStateRestored(savedInstanceState);
+        if (isPlayerAvailable() && player.isFullscreen()
+                && mainPlayerRelationFor(serviceId, url) == Relation.ACTIVE_ITEM) {
+            // Mini-player collapse saves an app-bar offset that can hide the retained video.
+            // Override it after view-state restoration, before the first fullscreen layout.
+            binding.appBarLayout.setExpanded(true, false);
+        }
+    }
+
     @Override // called from onViewCreated in {@link BaseFragment#onViewCreated}
     protected void initViews(final View rootView, final Bundle savedInstanceState) {
         super.initViews(rootView, savedInstanceState);

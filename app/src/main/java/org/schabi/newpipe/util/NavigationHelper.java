@@ -141,6 +141,38 @@ public final class NavigationHelper {
                 .putExtra(Player.ENQUEUE_NEXT_AND_PLAY, true);
     }
 
+    public static void switchPlayerMode(final Context context, @Nullable final Player player,
+                                        final PlayerType target) {
+        switchPlayerMode(context, player, target,
+                PlayerHelper.isStartMainPlayerFullscreenEnabled(context));
+    }
+
+    public static void switchPlayerMode(final Context context, @Nullable final Player player,
+                                        final PlayerType target, final boolean fullscreen) {
+        if (player == null || !player.isModeSwitchReady()) {
+            return;
+        }
+        if (target != PlayerType.VIDEO) {
+            player.switchPlaybackMode(target);
+            return;
+        }
+
+        final long request = player.requestMainPlaybackMode();
+        final PlayQueueItem item = player.getPlayQueue().getItem();
+        if (request == 0 || item == null) {
+            return;
+        }
+        PlayerHolder.getInstance().bindToExistingPlayer(player);
+        final Intent intent = getOpenIntent(context, item.getUrl(), item.getServiceId(),
+                StreamingService.LinkType.STREAM);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.putExtra(Constants.KEY_TITLE, item.getTitle());
+        intent.putExtra(VideoDetailFragment.KEY_SWITCHING_PLAYERS, true);
+        intent.putExtra(VideoDetailFragment.KEY_MODE_SWITCH_REQUEST, request);
+        intent.putExtra(VideoDetailFragment.KEY_MODE_SWITCH_FULLSCREEN, fullscreen);
+        context.startActivity(intent);
+    }
+
     /* PLAY */
     public static void playOnMainPlayer(final AppCompatActivity activity,
                                         @NonNull final PlayQueue playQueue) {
@@ -155,6 +187,10 @@ public final class NavigationHelper {
     public static void playOnMainPlayer(final Context context,
                                         @NonNull final PlayQueue playQueue,
                                         final boolean switchingPlayers) {
+        if (switchingPlayers) {
+            switchPlayerMode(context, PlayerHolder.getInstance().getPlayer(), PlayerType.VIDEO);
+            return;
+        }
         final PlayQueueItem item = playQueue.getItem();
         if (item != null) {
             openVideoDetail(context,
@@ -416,8 +452,46 @@ public final class NavigationHelper {
                                                @NonNull final String title,
                                                @Nullable final PlayQueue playQueue,
                                                final boolean switchingPlayers) {
+        final Player player = PlayerHolder.getInstance().getPlayer();
+        openVideoDetailFragment(context, fragmentManager, serviceId, url, title, playQueue,
+                switchingPlayers, switchingPlayers && player != null
+                        ? player.requestMainPlaybackMode() : 0,
+                PlayerHelper.isStartMainPlayerFullscreenEnabled(context));
+    }
+
+    public static void openVideoDetailFragment(@NonNull final Context context,
+                                               @NonNull final FragmentManager fragmentManager,
+                                               final int serviceId,
+                                               @Nullable final String url,
+                                               @NonNull final String title,
+                                               @Nullable final PlayQueue playQueue,
+                                               final boolean switchingPlayers,
+                                               final long modeSwitchRequest,
+                                               final boolean fullscreen) {
 
         final PlayerHolder playerHolder = PlayerHolder.getInstance();
+        if (switchingPlayers) {
+            final Player player = playerHolder.getPlayer();
+            if (modeSwitchRequest == 0 || (player != null
+                    && !player.isMainPlaybackModeRequestCurrent(modeSwitchRequest))) {
+                return;
+            }
+            final Fragment existing = fragmentManager.findFragmentById(R.id.fragment_player_holder);
+            if (existing instanceof VideoDetailFragment && existing.isAdded()
+                    && existing.getView() != null) {
+                final VideoDetailFragment details = (VideoDetailFragment) existing;
+                details.switchToMainPlayer(modeSwitchRequest, fullscreen);
+            } else {
+                final VideoDetailFragment details = VideoDetailFragment.getInstance(
+                        serviceId, url, title, null);
+                details.setAutoPlay(false);
+                defaultTransaction(fragmentManager)
+                        .replace(R.id.fragment_player_holder, details)
+                        .runOnCommit(() -> details.switchToMainPlayer(modeSwitchRequest, fullscreen))
+                        .commit();
+            }
+            return;
+        }
         @Nullable final PlayQueueItem activeItem = playerHolder.getCurrentQueueItem();
         final Relation mainQueueRelation = MainPlayerQueueBrowsingPolicy.classify(
                 playerHolder.getType(),
@@ -432,9 +506,6 @@ public final class NavigationHelper {
         if (!playerHolder.isPlayerOpen()) {
             // no player open
             autoPlay = PlayerHelper.isAutoplayAllowedByUser(context);
-        } else if (switchingPlayers) {
-            // switching player to main player
-            autoPlay = playerHolder.isPlaying(); // keep play/pause state
         } else if (MainPlayerQueueBrowsingPolicy.shouldPreserveQueueForBrowsing(
                 mainQueueRelation, playQueue != null)) {
             // Opening details is a browsing action. Replacing a live main queue requires Play.
@@ -451,13 +522,7 @@ public final class NavigationHelper {
                                                                             loadVideo) -> {
             expandMainPlayer(detailFragment.requireActivity());
             detailFragment.setAutoPlay(autoPlay);
-            if (switchingPlayers) {
-                // Situation when user switches from players to main player. All needed data is
-                // here, we can start watching (assuming newQueue equals playQueue).
-                // Starting directly in fullscreen if the previous player type was popup.
-                detailFragment.openVideoPlayer(playerType == PlayerService.PlayerType.POPUP
-                        || PlayerHelper.isStartMainPlayerFullscreenEnabled(context));
-            } else if (loadVideo) {
+            if (loadVideo) {
                 detailFragment.selectAndLoadVideo(serviceId, url, title, playQueue);
             }
             detailFragment.scrollToTop();

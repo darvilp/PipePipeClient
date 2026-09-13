@@ -60,6 +60,7 @@ import android.view.WindowManager;
 import android.view.animation.AnticipateInterpolator;
 import android.widget.*;
 
+import androidx.annotation.MainThread;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -279,6 +280,10 @@ public final class Player implements
     //////////////////////////////////////////////////////////////////////////*/
 
     private PlayerType playerType = PlayerType.VIDEO;
+    private static final java.util.concurrent.atomic.AtomicLong NEXT_MODE_REQUEST =
+            new java.util.concurrent.atomic.AtomicLong();
+    private long pendingMainModeRequest;
+    @Nullable private PlayQueueItem modeSwitchRecoveryItem;
     private int currentState = STATE_PREFLIGHT;
 
     // audio only mode does not mean that player type is background, but that the player was
@@ -774,6 +779,8 @@ public final class Player implements
         }
 
         if (intent.getBooleanExtra(ENQUEUE_NEXT_AND_PLAY, false) && playQueue != null) {
+            pendingMainModeRequest = 0;
+            modeSwitchRecoveryItem = null;
             final PlayQueueItem itemToPlay = newQueue.getItem();
             if (itemToPlay == null) {
                 return;
@@ -804,6 +811,8 @@ public final class Player implements
             return;
         }
 
+        pendingMainModeRequest = 0;
+        modeSwitchRecoveryItem = null;
         final PlayerType oldPlayerType = playerType;
         playerType = retrievePlayerTypeFromIntent(intent);
         // We need to setup audioOnly before super(), see "sourceOf"
@@ -947,6 +956,65 @@ public final class Player implements
         NavigationHelper.sendPlayerStartedEvent(context);
     }
 
+    /** Starts navigation to main without changing playback until its surface is ready. */
+    @MainThread
+    public long requestMainPlaybackMode() {
+        pendingMainModeRequest = isModeSwitchReady() ? NEXT_MODE_REQUEST.incrementAndGet() : 0;
+        return pendingMainModeRequest;
+    }
+
+    public boolean isMainPlaybackModeRequestCurrent(final long request) {
+        return request != 0 && request == pendingMainModeRequest && isModeSwitchReady();
+    }
+
+    public boolean isModeSwitchReady() {
+        return !exoPlayerIsNull() && playQueue != null && !playQueue.isDisposed()
+                && playQueue.getItem() != null;
+    }
+
+    /** Changes presentation and tracks on the existing service, player and queue. */
+    @MainThread
+    public boolean switchPlaybackMode(@NonNull final PlayerType target) {
+        pendingMainModeRequest = 0;
+        if (!isModeSwitchReady()) {
+            return false;
+        }
+        if (target == PlayerType.POPUP && !PermissionHelper.isPopupEnabled(context)) {
+            PermissionHelper.showPopupEnablementToast(context);
+            return false;
+        }
+
+        if (popupPlayerSelected() && target != PlayerType.POPUP) {
+            removePopupFromView();
+        }
+        if (target != PlayerType.VIDEO && isFullscreen) {
+            PlayerUiModeHelper.setFullscreen(this, false);
+        }
+        playerType = target;
+        mainPlayerDetailsBrowsing = false;
+        useVideoSource(target != PlayerType.AUDIO, true);
+        setupElementsVisibility();
+        setupElementsSize();
+        updateStreamRelatedViews();
+
+        if (audioPlayerSelected()) {
+            service.removeViewFromParent();
+        } else if (popupPlayerSelected()) {
+            binding.getRoot().setVisibility(View.VISIBLE);
+            initPopup();
+            initPopupCloseOverlay();
+        } else {
+            binding.getRoot().setVisibility(View.VISIBLE);
+            initVideoPlayer();
+            closeItemsList();
+        }
+        notifyQueueUpdateToListeners();
+        notifyMetadataUpdateToListeners();
+        notifyPlaybackUpdateToListeners();
+        NotificationUtil.getInstance().createNotificationIfNeededAndUpdate(this, true);
+        return true;
+    }
+
     private void initPlayback(@NonNull final PlayQueue queue,
                               @RepeatMode final int repeatMode,
                               final float playbackSpeed,
@@ -1039,6 +1107,8 @@ public final class Player implements
     }
 
     public void destroy() {
+        pendingMainModeRequest = 0;
+        modeSwitchRecoveryItem = null;
         if (DEBUG) {
             Log.d(TAG, "destroy() called");
         }
@@ -1061,7 +1131,8 @@ public final class Player implements
 
     public void setRecovery() {
         if (playQueue == null || exoPlayerIsNull()
-                || playQueue.getIndex() != simpleExoPlayer.getCurrentMediaItemIndex()) {
+                || playQueue.getIndex() != simpleExoPlayer.getCurrentMediaItemIndex()
+                || (currentItem != null && playQueue.getItem() != currentItem)) {
             // The queue selection may change before ExoPlayer updates its timeline. Saving during
             // that window would assign the previous item's position to the newly selected item.
             return;
@@ -1071,10 +1142,9 @@ public final class Player implements
         final long windowPos = simpleExoPlayer.getCurrentPosition();
         final long duration = simpleExoPlayer.getDuration();
 
-        final long newPos =  Math.max(0, Math.min(windowPos, duration));
-        if(newPos > 0) {
-            setRecovery(queuePos, newPos);
-        }
+        final long newPos = Math.max(0, duration == C.TIME_UNSET
+                ? windowPos : Math.min(windowPos, duration));
+        setRecovery(queuePos, newPos);
     }
 
     private void setRecovery(final int queuePos, final long windowPos) {
@@ -1100,6 +1170,8 @@ public final class Player implements
 
     @Override // own playback listener
     public void onPlaybackShutdown() {
+        pendingMainModeRequest = 0;
+        modeSwitchRecoveryItem = null;
         if (DEBUG) {
             Log.d(TAG, "onPlaybackShutdown() called");
         }
@@ -1708,6 +1780,9 @@ public final class Player implements
     }
 
     public void removePopupFromView() {
+        if (closeOverlayBinding != null) {
+            closeOverlayBinding.closeButton.animate().setListener(null).cancel();
+        }
         if (windowManager != null) {
             // Close popup menus before removing from view to prevent crash
             closeAllPopupMenus();
@@ -1715,7 +1790,7 @@ public final class Player implements
             // wrap in try-catch since it could sometimes generate errors randomly
             try {
                 if (popupHasParent()) {
-                    windowManager.removeView(binding.getRoot());
+                    windowManager.removeViewImmediate(binding.getRoot());
                 }
             } catch (final IllegalArgumentException e) {
                 Log.w(TAG, "Failed to remove popup from window manager", e);
@@ -1725,12 +1800,14 @@ public final class Player implements
                 final boolean closeOverlayHasParent = closeOverlayBinding != null
                         && closeOverlayBinding.getRoot().getParent() != null;
                 if (closeOverlayHasParent) {
-                    windowManager.removeView(closeOverlayBinding.getRoot());
+                    windowManager.removeViewImmediate(closeOverlayBinding.getRoot());
                 }
             } catch (final IllegalArgumentException e) {
                 Log.w(TAG, "Failed to remove popup overlay from window manager", e);
             }
         }
+        closeOverlayBinding = null;
+        isPopupClosing = false;
     }
 
     private void animatePopupOverlayAndFinishService() {
@@ -3043,6 +3120,10 @@ public final class Player implements
                 if (previousInfo == null || !previousInfo.getUrl().equals(info.getUrl())) {
                     // only update with the new stream info if it has actually changed
                     updateMetadataWith(info);
+                } else {
+                    // A quality change replaces the source tag without changing the stream URL.
+                    // Keep paused playback's quality controls in sync with that selected source.
+                    updateStreamRelatedViews();
                 }
             });
         });
@@ -3466,13 +3547,15 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
                         + "size=[" + currentPlaylistSize + "].");
             }
 
-            if (item.getRecoveryPosition() != PlayQueueItem.RECOVERY_UNSET && shouldSeek()) {
+            if (item.getRecoveryPosition() != PlayQueueItem.RECOVERY_UNSET
+                    && (shouldSeek() || item == modeSwitchRecoveryItem)) {
                 simpleExoPlayer.seekTo(currentPlayQueueIndex, item.getRecoveryPosition());
                 playQueue.unsetRecovery(currentPlayQueueIndex);
             } else {
                 simpleExoPlayer.seekToDefaultPosition(currentPlayQueueIndex);
             }
         }
+        modeSwitchRecoveryItem = null;
     }
 
     public boolean shouldSeek() {
@@ -4084,7 +4167,7 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
     @Nullable
     public MediaSource sourceOf(final PlayQueueItem item, final StreamInfo info) {
         PlaybackStartupTrace.mark(startupTraceId, "resolver_started");
-        final long initialPositionMs = shouldSeek()
+        final long initialPositionMs = (shouldSeek() || item == modeSwitchRecoveryItem)
                 && item.getRecoveryPosition() != PlayQueueItem.RECOVERY_UNSET
                 ? item.getRecoveryPosition() : 0;
         final MediaSource resolved;
@@ -4633,12 +4716,7 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
         } else if (v.getId() == binding.sleepTimer.getId()) {
             onSleepTimerClicked();
         } else if (v.getId() == binding.fullScreenButton.getId()) {
-            setRecovery();
-            if (popupPlayerSelected()) {
-                // Clean up popup properly before switching to main player
-                service.stopService();
-            }
-            NavigationHelper.playOnMainPlayer(context, playQueue, true);
+            NavigationHelper.switchPlayerMode(context, this, PlayerType.VIDEO, true);
             return;
         } else if (v.getId() == binding.screenRotationButton.getId()) {
             PlayerUiModeHelper.setFullscreen(this, !isFullscreen);
@@ -5238,8 +5316,7 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
                     useVideoSource(false);
                     break;
                 case MINIMIZE_ON_EXIT_MODE_POPUP:
-                    setRecovery();
-                    NavigationHelper.playOnPopupPlayer(context, playQueue, true);
+                    NavigationHelper.switchPlayerMode(context, this, PlayerType.POPUP);
                     break;
                 case MINIMIZE_ON_EXIT_MODE_NONE: default:
                     pause();
@@ -5315,60 +5392,56 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
     }
 
     private void useVideoSource(final boolean videoEnabled) {
-        if (playQueue == null || isAudioOnly == !videoEnabled || audioPlayerSelected()) {
+        useVideoSource(videoEnabled, false);
+    }
+
+    private void useVideoSource(final boolean videoEnabled, final boolean modeSwitch) {
+        if (playQueue == null || isAudioOnly == !videoEnabled
+                || (audioPlayerSelected() && videoEnabled)) {
             return;
         }
 
+        final boolean keepLiveEdge = modeSwitch && isLiveEdge();
+        setRecovery();
         isAudioOnly = !videoEnabled;
-        // When a user returns from background, controls could be hidden but SystemUI will be shown
-        // 100%. Hide it.
         if (!isAudioOnly && !isControlsVisible()) {
             hideSystemUIIfNeeded();
         }
 
-        // The current metadata may be null sometimes (for e.g. when using an unstable connection
-        // in livestreams) so we will be not able to execute the block below.
-        // Reload the play queue manager in this case, which is the behavior when we don't know the
-        // index of the video renderer or playQueueManagerReloadingNeeded returns true.
-        final Optional<StreamInfo> optCurrentStreamInfo = getCurrentStreamInfo();
-        if (!optCurrentStreamInfo.isPresent()) {
-            reloadPlayQueueManager();
-            setRecovery();
-            return;
-        }
-
-        final StreamInfo info = optCurrentStreamInfo.get();
-
-        // In the case we don't know the source type, fallback to the one with video with audio or
-        // audio-only source.
+        final Optional<StreamInfo> info = currentItem == playQueue.getItem()
+                ? getCurrentStreamInfo() : Optional.empty();
         final SourceType sourceType = videoResolver.getStreamSourceType().orElse(
                 SourceType.VIDEO_WITH_AUDIO_OR_AUDIO_ONLY);
+        final Optional<VideoStream> sourceVideo = Optional.ofNullable(currentMetadata)
+                .flatMap(MediaItemTag::getMaybeQuality)
+                .map(MediaItemTag.Quality::getSelectedVideoStream);
+        final boolean sabrVideoSource = sourceVideo
+                .map(video -> video.getDeliveryMethod() == DeliveryMethod.SABR).orElse(false);
+        // Audio-origin SABR exposes video tracks, but lacks the video's selected quality and
+        // subtitle sources. Only a retained video-origin source is compatible with video mode.
+        final boolean needsVideoSource = videoEnabled && !sourceVideo.isPresent()
+                && sourceType != SourceType.LIVE_STREAM && info.isPresent()
+                && (!info.get().getVideoStreams().isEmpty()
+                || !info.get().getVideoOnlyStreams().isEmpty());
+        final boolean reload = !info.isPresent() || needsVideoSource || (!sabrVideoSource
+                && playQueueManagerReloadingNeeded(sourceType, info.get(),
+                        getVideoRendererIndex()));
 
-        // A SABR source already exposes both audio and video, so background / foreground video
-        // toggles only need to update Media3 track selection instead of rebuilding the source.
-        if (!isCurrentStreamSabr()
-                && playQueueManagerReloadingNeeded(sourceType, info, getVideoRendererIndex())) {
-            reloadPlayQueueManager();
-        } else {
-            final StreamType streamType = info.getStreamType();
-            if (streamType == StreamType.AUDIO_STREAM
-                    || streamType == StreamType.AUDIO_LIVE_STREAM) {
-                // Nothing to do more than setting the recovery position
-                setRecovery();
-                return;
+        trackSelector.setParameters(trackSelector.buildUponParameters()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !videoEnabled)
+                .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !videoEnabled));
+
+        if (reload) {
+            if (modeSwitch && playQueue.getIndex()
+                    == simpleExoPlayer.getCurrentMediaItemIndex()
+                    && (currentItem == null || currentItem == playQueue.getItem())) {
+                modeSwitchRecoveryItem = playQueue.getItem();
+                if (keepLiveEdge) {
+                    playQueue.unsetRecovery(playQueue.getIndex());
+                }
             }
-
-            final DefaultTrackSelector.Parameters.Builder parametersBuilder =
-                    trackSelector.buildUponParameters();
-
-            // Enable/disable the video track and the ability to select subtitles
-            parametersBuilder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !videoEnabled);
-            parametersBuilder.setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !videoEnabled);
-
-            trackSelector.setParameters(parametersBuilder);
+            reloadPlayQueueManager();
         }
-
-        setRecovery();
     }
 
     /**

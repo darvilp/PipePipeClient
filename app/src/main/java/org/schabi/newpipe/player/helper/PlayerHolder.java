@@ -68,6 +68,26 @@ public final class PlayerHolder {
         return player.isPlaying();
     }
 
+    public boolean getPlayWhenReady() {
+        return player != null && player.getPlayWhenReady();
+    }
+
+    @Nullable
+    public Player getPlayer() {
+        return player;
+    }
+
+    /** Binds a mode-switch destination to the service that already owns playback. */
+    public void bindToExistingPlayer(final Player activePlayer) {
+        if (player == activePlayer && bound) {
+            return;
+        }
+        final Context context = getCommonContext();
+        unbind(context);
+        serviceConnection.doPlayAfterConnect(false);
+        bind(context, new Intent(context, activePlayer.service.getInstance().getClass()), 0);
+    }
+
     public boolean isPlayerOpen() {
         return player != null;
     }
@@ -191,11 +211,14 @@ public final class PlayerHolder {
             Log.d(TAG, "bind() called");
         }
 
-        final Intent serviceIntent = new Intent(context, DeviceUtils.getPlayerServiceClass());
+        bind(context, new Intent(context, DeviceUtils.getPlayerServiceClass()),
+                Context.BIND_AUTO_CREATE);
+    }
+
+    private void bind(final Context context, final Intent serviceIntent, final int flags) {
         serviceIntent.setAction(PlayerService.BIND_PLAYER_HOLDER_ACTION);
         try {
-            bound = context.bindService(serviceIntent, serviceConnection,
-                    Context.BIND_AUTO_CREATE);
+            bound = context.bindService(serviceIntent, serviceConnection, flags);
             if (!bound) {
                 Log.e(TAG, "bindService returned false for PlayerHolder connection.");
                 // 不要在这里调用 unbindService!

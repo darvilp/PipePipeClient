@@ -293,6 +293,7 @@ public final class Player implements
     private boolean wasPlaying = false;
     private boolean wasAtLiveEdge = false;
     private boolean isFullscreen = false;
+    private boolean wasLandscape;
     private boolean isVerticalVideo = false;
     private boolean fragmentIsVisible = false;
     private boolean mainPlayerDetailsBrowsing = false;
@@ -437,6 +438,7 @@ public final class Player implements
     public Player(@NonNull final PlayerServiceInterface service) {
         this.service = service;
         context = service.getInstance();
+        wasLandscape = service.isLandscape();
         prefs = PreferenceManager.getDefaultSharedPreferences(context);
 
         final boolean isSponsorBlockEnabled = prefs.getBoolean(
@@ -1482,6 +1484,13 @@ public final class Player implements
                     updateScreenSize();
                     changePopupSize(popupLayoutParams.width);
                     checkPopupPositionBounds();
+                }
+                final boolean landscape = service.isLandscape();
+                if (wasLandscape != landscape) {
+                    wasLandscape = landscape;
+                    if (fragmentIsVisible) {
+                        PlayerUiModeHelper.onOrientationChanged(this, landscape);
+                    }
                 }
                 // Close popup menus to prevent crash when view is not attached after rotation
                 closeAllPopupMenus();

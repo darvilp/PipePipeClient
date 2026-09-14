@@ -267,6 +267,7 @@ public final class VideoDetailFragment
                                    final boolean playAfterConnect) {
         player = connectedPlayer;
         playerService = connectedPlayerService;
+        updateBottomSheetDraggableForFullscreen();
         if (pendingMainModeRequest != 0) {
             attachPendingMainPlayer();
             return;
@@ -623,7 +624,9 @@ public final class VideoDetailFragment
             }
         } else if (id == R.id.detail_thumbnail_root_layout) {
             handleMainPlayerPlayFromDetails();
-        } else if (id == R.id.detail_toggle_secondary_controls_view) {
+        } else if (id == R.id.detail_video_title_view
+                || id == R.id.detail_title_root_layout
+                || id == R.id.detail_toggle_secondary_controls_view) {
             toggleTitleAndSecondaryControls();
         } else if (id == R.id.overlay_thumbnail || id == R.id.overlay_metadata_layout || id == R.id.overlay_buttons_layout) {
             if (!returnToActiveMainPlayerIfBrowsing(true)) {
@@ -685,7 +688,7 @@ public final class VideoDetailFragment
             } else {
                 openChannel(currentInfo.getUploaderUrl(), currentInfo.getUploaderName());
             }
-        } else if (id == R.id.detail_video_title_view) {
+        } else if (id == R.id.detail_video_title_view || id == R.id.detail_title_root_layout) {
             ShareUtils.copyToClipboard(requireContext(),
                     binding.detailVideoTitleView.getText().toString());
         } else if (id == R.id.detail_toggle_secondary_controls_view) {
@@ -800,8 +803,8 @@ public final class VideoDetailFragment
     protected void initListeners() {
         super.initListeners();
 
-        binding.detailVideoTitleView.setOnClickListener(this);
-        binding.detailVideoTitleView.setOnLongClickListener(this);
+        binding.detailTitleRootLayout.setOnClickListener(this);
+        binding.detailTitleRootLayout.setOnLongClickListener(this);
         binding.detailToggleSecondaryControlsView.setOnClickListener(this);
         binding.detailToggleSecondaryControlsView.setOnLongClickListener(this);
         binding.detailUploaderRootLayout.setOnClickListener(this);
@@ -2595,6 +2598,7 @@ public final class VideoDetailFragment
 
     @Override
     public void onFullscreenStateChanged(final boolean fullscreen) {
+        updateBottomSheetDraggableForFullscreen();
         setupBrightness();
         if (!isPlayerAndPlayerServiceAvailable()
                 || playerService.getView() == null
@@ -2880,6 +2884,23 @@ public final class VideoDetailFragment
                 newBottomPadding);
     }
 
+    /**
+     * While the player is in fullscreen the bottom-sheet drag gesture (which collapses the whole
+     * page into the mini player) must never start: a vertical swipe in fullscreen belongs to the
+     * player's own gesture handling (exit fullscreen / volume / brightness).
+     *
+     * <p>Material's {@link BottomSheetBehavior#setDraggable(boolean)} makes
+     * {@code onInterceptTouchEvent} bail out on the very first check, so the sheet can no longer
+     * steal the touch stream from the player (not even via the initial-move race or the two-finger
+     * branch in {@link org.schabi.newpipe.player.event.CustomBottomSheetBehavior}).
+     */
+    private void updateBottomSheetDraggableForFullscreen() {
+        if (bottomSheetBehavior == null) {
+            return;
+        }
+        bottomSheetBehavior.setDraggable(!(isPlayerAvailable() && player.isFullscreen()));
+    }
+
     private void setupBottomPlayer() {
         final CoordinatorLayout.LayoutParams params =
                 (CoordinatorLayout.LayoutParams) binding.appBarLayout.getLayoutParams();
@@ -2889,6 +2910,9 @@ public final class VideoDetailFragment
         bottomSheetBehavior = BottomSheetBehavior.from(bottomSheetLayout);
         bottomSheetState = sanitizeBottomSheetState(bottomSheetState);
         bottomSheetBehavior.setState(bottomSheetState);
+        // The player may already be in fullscreen when this view is (re)created
+        // (e.g. after a rotation while playing fullscreen): keep the drag disabled in that case.
+        updateBottomSheetDraggableForFullscreen();
         final int peekHeight = getResources().getDimensionPixelSize(R.dimen.mini_player_height);
         if (bottomSheetState != BottomSheetBehavior.STATE_HIDDEN) {
             manageSpaceAtTheBottom(false);

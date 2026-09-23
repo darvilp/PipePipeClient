@@ -76,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           parent="$RUNNER_TEMP/pipepipe-all-features-assets"
-          PipePipeClient/tools/build-unofficial-release.sh "$parent"
+          bash PipePipeClient/tools/build-unofficial-release.sh "$parent"
           mapfile -t candidates < <(find "$parent" -mindepth 1 -maxdepth 1 -type d -print)
           ((${#candidates[@]} == 1)) || { echo "Expected exactly one candidate directory" >&2; exit 1; }
           echo "PIPEPIPE_ASSET_DIR=${candidates[0]}" >> "$GITHUB_ENV"

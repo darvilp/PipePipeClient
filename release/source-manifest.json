@@ -1,7 +1,7 @@
 {
   "channel": "unofficial/all-features",
   "client_repository": "https://github.com/darvilp/PipePipeClient.git",
-  "integration_commit": "cba9577f5c3312508dda7b85d6124272411d3f8e",
+  "integration_commit": "67e8d175be5d50ae760f499cc7ca55498085810c",
   "extractor_repository": "https://github.com/darvilp/PipePipeExtractor.git",
   "extractor_commit": "c0cd0d61863f430af86475aaac968fbef245f507",
   "ffmpeg_aar_sha256": "19d064dd952a51dd3015007007bf7740c66ce65c09812abbe573a3ec6858f968",
@@ -10,7 +10,7 @@
   "compile_sdk": 37,
   "build_tools": "37.0.0",
   "application_id": "InfinityLoop1309.NewPipeEnhanced.debug.allfeatures",
-  "version_name": "5.3.1-unofficial.4",
-  "base_version_code": 1111,
+  "version_name": "5.3.1-unofficial.5",
+  "base_version_code": 1112,
   "signer_sha256": "2bb91a5aa3f4c2f2c8d5edba770f14c7cd10619fb737439a1ba7bf868468ed91"
 }

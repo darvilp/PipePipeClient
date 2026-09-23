@@ -24,11 +24,13 @@ import org.schabi.newpipe.util.SponsorBlockHelper;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
 import io.reactivex.rxjava3.core.Single;
-import io.reactivex.rxjava3.disposables.Disposable;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 
 public class SponsorBlockSegmentListAdapter extends
@@ -36,6 +38,8 @@ public class SponsorBlockSegmentListAdapter extends
     private final Context context;
     private ArrayList<SponsorBlockSegment> sponsorBlockSegments = new ArrayList<>();
     private final SponsorBlockSegmentListAdapterListener listener;
+    private final Map<String, VoteState> votes = new HashMap<>();
+    private final CompositeDisposable voteRequests = new CompositeDisposable();
 
     public SponsorBlockSegmentListAdapter(final Context context,
                                           final SponsorBlockSegmentListAdapterListener listener) {
@@ -74,7 +78,7 @@ public class SponsorBlockSegmentListAdapter extends
         final View itemView = LayoutInflater
                 .from(context)
                 .inflate(R.layout.list_segments_item, parent, false);
-        return new SponsorBlockSegmentItemViewHolder(itemView, listener);
+        return new SponsorBlockSegmentItemViewHolder(itemView, listener, votes, voteRequests);
     }
 
     @Override
@@ -90,6 +94,18 @@ public class SponsorBlockSegmentListAdapter extends
         return sponsorBlockSegments.size();
     }
 
+    @Override
+    public void onDetachedFromRecyclerView(@NonNull final RecyclerView recyclerView) {
+        voteRequests.clear();
+        votes.values().forEach(state -> state.isVoting = false);
+        super.onDetachedFromRecyclerView(recyclerView);
+    }
+
+    private static final class VoteState {
+        private boolean isVoting;
+        private Integer lastVote;
+    }
+
     public static class SponsorBlockSegmentItemViewHolder extends RecyclerView.ViewHolder {
         private final View itemSegmentColorView;
         private final ImageView itemSegmentSkipToHighlight;
@@ -98,19 +114,20 @@ public class SponsorBlockSegmentListAdapter extends
         private final TextView itemSegmentEndTimeTextView;
         private final ImageView itemSegmentVoteUpImageView;
         private final ImageView itemSegmentVoteDownImageView;
-        private Disposable voteSubscriber;
+        private final Map<String, VoteState> votes;
+        private final CompositeDisposable voteRequests;
         private String segmentUuid;
         private int segmentServiceId;
-        private boolean isVoting;
-        private boolean hasUpVoted;
-        private boolean hasDownVoted;
-        private boolean hasResetVote;
         private SponsorBlockSegment currentSponsorBlockSegment;
 
-        public SponsorBlockSegmentItemViewHolder(
+        private SponsorBlockSegmentItemViewHolder(
                 @NonNull final View itemView,
-                final SponsorBlockSegmentListAdapterListener listener) {
+                final SponsorBlockSegmentListAdapterListener listener,
+                final Map<String, VoteState> votes,
+                final CompositeDisposable voteRequests) {
             super(itemView);
+            this.votes = votes;
+            this.voteRequests = voteRequests;
 
             itemSegmentColorView = itemView.findViewById(R.id.item_segment_color_view);
             itemSegmentSkipToHighlight = itemView.findViewById(R.id.item_segment_skip_to_highlight);
@@ -197,54 +214,44 @@ public class SponsorBlockSegmentListAdapter extends
             final String endText = millisecondsToString(sponsorBlockSegment.endTime);
             itemSegmentEndTimeTextView.setText(endText);
 
-            if (sponsorBlockSegment.category == SponsorBlockCategory.PENDING
-                    || sponsorBlockSegment.uuid.equals("TEMP")
-                    || sponsorBlockSegment.uuid.equals("")) {
-                itemSegmentVoteUpImageView.setVisibility(View.INVISIBLE);
-                itemSegmentVoteDownImageView.setVisibility(View.INVISIBLE);
-            }
+            final int voteVisibility = canVote() ? View.VISIBLE : View.INVISIBLE;
+            itemSegmentVoteUpImageView.setVisibility(voteVisibility);
+            itemSegmentVoteDownImageView.setVisibility(voteVisibility);
+        }
+
+        private boolean canVote() {
+            return currentSponsorBlockSegment != null
+                    && currentSponsorBlockSegment.category != SponsorBlockCategory.PENDING
+                    && segmentUuid != null && !segmentUuid.isEmpty()
+                    && !"TEMP".equals(segmentUuid);
         }
 
         private void vote(final int value) {
-            if (segmentUuid == null) {
+            if (!canVote()) {
                 return;
             }
 
-            if (isVoting) {
+            // State belongs to the segment, not the recycled row displaying it.
+            final String uuid = segmentUuid;
+            final int serviceId = segmentServiceId;
+            final VoteState state = votes.computeIfAbsent(serviceId + ":" + uuid,
+                    key -> new VoteState());
+            if (state.isVoting || Integer.valueOf(value).equals(state.lastVote)) {
                 return;
             }
-
-            if (voteSubscriber != null) {
-                voteSubscriber.dispose();
-            }
-
-            // these 3 checks prevent the user from continuously spamming votes
-            // (not entirely sure if we need this)
-
-            if (value == 0 && hasDownVoted) {
-                return;
-            }
-
-            if (value == 1 && hasUpVoted) {
-                return;
-            }
-
-            if (value == 20 && hasResetVote) {
-                return;
-            }
-
             final Context context = itemView.getContext();
             final String userId = SponsorBlockHelper.getUserId(context);
+            state.isVoting = true;
 
-            voteSubscriber = Single.fromCallable(() -> {
-                        isVoting = true;
-                        return SponsorBlockExtractorHelper.submitSponsorBlockSegmentVote(
-                                segmentUuid, SponsorBlockExtractorHelper.getApiUrl(segmentServiceId), value, userId);
-                    })
+            // Let the captured segment request finish even if this holder is rebound.
+            voteRequests.add(Single.fromCallable(() ->
+                            SponsorBlockExtractorHelper.submitSponsorBlockSegmentVote(
+                                    uuid, SponsorBlockExtractorHelper.getApiUrl(serviceId),
+                                    value, userId))
                     .subscribeOn(Schedulers.io())
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(response -> {
-                        isVoting = false;
+                        state.isVoting = false;
                         String toastMessage;
                         if (response.responseCode() != 200) {
                             toastMessage = response.responseMessage();
@@ -252,21 +259,15 @@ public class SponsorBlockSegmentListAdapter extends
                                 toastMessage = "Error " + response.responseCode();
                             }
                         } else if (value == 0) {
-                            hasDownVoted = true;
-                            hasUpVoted = false;
-                            hasResetVote = false;
+                            state.lastVote = value;
                             toastMessage = context.getString(
                                     R.string.sponsor_block_segment_voted_down_toast);
                         } else if (value == 1) {
-                            hasDownVoted = false;
-                            hasUpVoted = true;
-                            hasResetVote = false;
+                            state.lastVote = value;
                             toastMessage = context.getString(
                                     R.string.sponsor_block_segment_voted_up_toast);
                         } else if (value == 20) {
-                            hasDownVoted = false;
-                            hasUpVoted = false;
-                            hasResetVote = true;
+                            state.lastVote = value;
                             toastMessage = context.getString(
                                     R.string.sponsor_block_segment_reset_vote_toast);
                         } else {
@@ -276,13 +277,14 @@ public class SponsorBlockSegmentListAdapter extends
                                 toastMessage,
                                 Toast.LENGTH_SHORT).show();
                     }, throwable -> {
+                        state.isVoting = false;
                         if (throwable instanceof NullPointerException) {
                             return;
                         }
                         ErrorUtil.showSnackbar(context,
                                 new ErrorInfo(throwable, UserAction.SUBSCRIPTION_UPDATE,
                                         "Submit vote for SponsorBlock segment"));
-                    });
+                    }));
         }
     }
 }

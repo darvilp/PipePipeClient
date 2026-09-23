@@ -34,7 +34,7 @@ tools/build-unofficial-release.sh
 
 The script refuses missing signing inputs and dirty or mismatched source. It runs JVM tests, release assembly and release lint, then verifies every ABI APK's package, version, non-debuggable manifest, SDK range, native ABI, 16 KB zip alignment and signing certificate. It emits a timestamped directory under `build/unofficial`, including four APKs, checksums, manifests and release notes. It refuses an existing candidate directory. An optional first argument selects the parent output directory.
 
-The current counter is base version code `1111`, producing arm64 code `111104`, with version name `5.3.1-unofficial.4`. Increment the fork counter for every subsequent distributed build, independently of the upstream version name. Never overwrite an old APK or reuse a public release tag.
+The current counter is base version code `1112`, producing arm64 code `111204`, with version name `5.3.1-unofficial.5`. Increment the fork counter for every subsequent distributed build, independently of the upstream version name. Never overwrite an old APK or reuse a public release tag.
 
 ## Validation limits and lint baseline
 
@@ -47,7 +47,7 @@ Android callback, database and continuous-drag regressions accompany the fixes. 
 After candidate acceptance and publication approval:
 
 1. Make both exact source revisions available on the fork repositories using normal pushes.
-2. Tag the tested client commit, for example `all-features/v5.3.1-unofficial.4`, refusing an existing tag.
+2. Tag the tested client commit, for example `all-features/v5.3.1-unofficial.5`, refusing an existing tag.
 3. Let the tag workflow create a draft prerelease in `darvilp/PipePipeClient` with the four verified ABI APKs, checksums, generated manifests and release notes.
 4. Verify the draft target and downloaded asset hashes before publishing it as a prerelease.
 

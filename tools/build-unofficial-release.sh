@@ -43,11 +43,14 @@ release_output_parent=${1:-"$release_root/build/unofficial"}
 mkdir -p "$release_output_parent"
 release_output="$release_output_parent/$release_version-$release_short-$release_timestamp"
 mkdir "$release_output"
-release_apk_name="PipePipe-all-features-$release_version-$release_short-$release_timestamp-arm64-v8a.apk"
-release_apk="$release_output/$release_apk_name"
-cp "app/build/outputs/apk/release/PipePipe_$release_version-arm64-v8a-release.apk" "$release_apk"
-python3 tools/verify-unofficial-apk.py "$release_apk" --sdk "$release_sdk" \
-    --output-json "$release_output/apk-manifest.json"
+for release_abi in armeabi-v7a arm64-v8a x86 x86_64; do
+    release_apk_name="PipePipe-all-features-$release_version-$release_short-$release_timestamp-$release_abi.apk"
+    release_apk="$release_output/$release_apk_name"
+    cp "app/build/outputs/apk/release/PipePipe_$release_version-$release_abi-release.apk" "$release_apk"
+    python3 tools/verify-unofficial-apk.py "$release_apk" --sdk "$release_sdk" \
+        --abi "$release_abi" \
+        --output-json "$release_output/apk-manifest-$release_abi.json"
+done
 cp release/source-manifest.json "$release_output/source-manifest.json"
 cp release/RELEASE_NOTES.md "$release_output/RELEASE_NOTES.md"
 python3 - "$release_output" "$release_source" <<'PY'

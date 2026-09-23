@@ -1,6 +1,11 @@
-# PipePipe All Features 5.3.1-beta-unofficial.3
+# PipePipe All Features 5.3.1-unofficial.4
 
-Unofficial candidate from the darvilp fork. This build restores switching between main, background, and popup playback while retaining the current session. It includes the previous all-features queue, browsing, playlist, and fullscreen corrections.
+Public test-drive prerelease from the darvilp fork. This build combines the all-features queue, browsing, playlist, fullscreen, and player-switching work with upstream PipePipe 5.3.1.
+
+## Upstream 5.3.1 sync
+
+- Includes upstream fullscreen gesture and rotation controls, title-row interaction, search-history fixes, comment formatting, NicoNico login updates, and channel toolbar changes.
+- Uses PipePipeExtractor 5.3.1 for the matching extraction fixes.
 
 ## Restored player switching
 
@@ -17,6 +22,6 @@ A brief buffering gap is accepted when changing the required source. Gapless aud
 
 ## Installation and updates
 
-The candidate retains the established all-features application ID and signer. Its version name is `5.3.1-beta-unofficial.3`, with arm64 version code `111004`; the minified release variant is not debuggable. Updates remain manual through the fork's releases page, with official automatic updates disabled.
+The release keeps the all-features application ID but starts a new public signing lineage. Its version name is `5.3.1-unofficial.4`, with arm64 version code `111104`; the minified release variant is not debuggable. Updates remain manual through the fork's releases page, with official automatic updates disabled. Choose `arm64-v8a` for almost every current Android phone or tablet.
 
 Native Android PiP, a new playback engine, and broader hidden-playback or Android Auto handoff fixes are outside this change.

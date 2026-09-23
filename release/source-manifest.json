@@ -1,16 +1,16 @@
 {
   "channel": "unofficial/all-features",
   "client_repository": "https://github.com/darvilp/PipePipeClient.git",
-  "integration_commit": "8ca96c5e82c5262385ee0f27294b5492dcce5485",
+  "integration_commit": "cba9577f5c3312508dda7b85d6124272411d3f8e",
   "extractor_repository": "https://github.com/darvilp/PipePipeExtractor.git",
-  "extractor_commit": "4210348141bed6f9544da8eef8175d4ba91adf9f",
+  "extractor_commit": "c0cd0d61863f430af86475aaac968fbef245f507",
   "ffmpeg_aar_sha256": "19d064dd952a51dd3015007007bf7740c66ce65c09812abbe573a3ec6858f968",
   "gradle_version": "9.5.1",
   "java_version": 25,
   "compile_sdk": 37,
   "build_tools": "37.0.0",
   "application_id": "InfinityLoop1309.NewPipeEnhanced.debug.allfeatures",
-  "version_name": "5.3.1-beta-unofficial.3",
-  "base_version_code": 1110,
-  "signer_sha256": "ee07e04194e6d856b5496a860e854057c3b0f8a63f6872080c0b4da99f0facf5"
+  "version_name": "5.3.1-unofficial.4",
+  "base_version_code": 1111,
+  "signer_sha256": "2bb91a5aa3f4c2f2c8d5edba770f14c7cd10619fb737439a1ba7bf868468ed91"
 }

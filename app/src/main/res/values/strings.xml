@@ -1112,4 +1112,25 @@
 <string name="rotation_controls_fullscreen_title">Automatically switch fullscreen on rotation</string>
 <string name="rotation_controls_fullscreen_summary">When system auto-rotate is enabled, rotating to landscape enters fullscreen and rotating to portrait exits fullscreen</string>
 <string name="niconico_login_summary">Tokens will only be used when necessary. The login page may not work on older devices with an outdated WebView.</string>
+    <string name="sponsor_block_time_unset">Not set · Edit</string>
+    <string name="sponsor_block_use_position">Use current position</string>
+    <string name="sponsor_block_jump_here">Jump here</string>
+    <string name="sponsor_block_time_hint">0:00.000</string>
+    <string name="sponsor_block_time_help">Enter seconds, minutes:seconds, or hours:minutes:seconds. Up to three decimal places.</string>
+    <string name="sponsor_block_time_invalid">Enter a valid time within the video. End must be after start.</string>
+    <string name="sponsor_block_position_unavailable">Open this video in the player to use its current position.</string>
+    <string name="sponsor_block_duration">Duration: %1$s</string>
+    <string name="sponsor_block_edit_time">%1$s · Edit</string>
+    <string name="sponsor_block_edit_start_description">Edit start time: %1$s</string>
+    <string name="sponsor_block_edit_end_description">Edit end time: %1$s</string>
+    <string name="sponsor_block_jump_start_description">Jump to segment start</string>
+    <string name="sponsor_block_jump_end_description">Jump to segment end</string>
+    <string name="sponsor_block_queue_hold">Queue will pause at video end while this draft is open.</string>
+    <string name="sponsor_block_video_start">Video start</string>
+    <string name="sponsor_block_video_end">Video end</string>
+    <string name="sponsor_block_minus">−0.1 s</string>
+    <string name="sponsor_block_plus">+0.1 s</string>
+    <string name="sponsor_block_minus_description">Subtract one tenth of a second</string>
+    <string name="sponsor_block_plus_description">Add one tenth of a second</string>
+    <string name="sponsor_block_saving">Submitting…</string>
 </resources>

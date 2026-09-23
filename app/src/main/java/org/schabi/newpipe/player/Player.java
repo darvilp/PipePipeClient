@@ -254,6 +254,9 @@ public final class Player implements
     @Nullable private MediaItemTag currentMetadata;
     @Nullable private Bitmap currentThumbnail;
 
+    @Nullable private Object sponsorBlockEditingOwner;
+    @Nullable private String sponsorBlockEditingVideoUrl;
+
     /*//////////////////////////////////////////////////////////////////////////
     // Player
     //////////////////////////////////////////////////////////////////////////*/
@@ -984,6 +987,7 @@ public final class Player implements
             Log.d(TAG, "destroyPlayer() called");
         }
 
+        clearSponsorBlockEditing();
         stopSabrBackoffCountdown();
         cleanupVideoSurface();
 
@@ -2769,7 +2773,8 @@ public final class Player implements
 
         NotificationUtil.getInstance().createNotificationIfNeededAndUpdate(this, false);
 
-        if (playQueue.getIndex() < playQueue.size() - 1) {
+        if (!isSponsorBlockEditingCurrentVideo()
+                && playQueue.getIndex() < playQueue.size() - 1) {
             playQueue.offsetIndex(+1);
         }
         if (isProgressLoopRunning()) {
@@ -3013,6 +3018,9 @@ public final class Player implements
             final StreamInfo previousInfo = Optional.ofNullable(currentMetadata)
                     .flatMap(MediaItemTag::getMaybeStreamInfo).orElse(null);
             currentMetadata = tag;
+            if (sponsorBlockEditingOwner != null && !isSponsorBlockEditingCurrentVideo()) {
+                clearSponsorBlockEditing();
+            }
 
             if (!currentMetadata.getErrors().isEmpty()) {
                 // new errors might have been added even if previousInfo == tag.getMaybeStreamInfo()
@@ -3073,6 +3081,10 @@ public final class Player implements
         }
         if (playQueue == null) {
             return;
+        }
+
+        if (oldPosition.mediaItemIndex != newPosition.mediaItemIndex) {
+            clearSponsorBlockEditing();
         }
 
         // Refresh the playback if there is a transition to the next video
@@ -3432,6 +3444,7 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
         if (!hasPlayQueueItemChanged) {
             return;
         }
+        clearSponsorBlockEditing();
         currentItem = item;
 
         // Check if on wrong window
@@ -3592,6 +3605,43 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
         }
     }
 
+    /**
+     * Keeps an active SponsorBlock draft on its video when playback reaches the end.
+     * Only the owner that acquired the guard may release it; old fragment lifecycle callbacks
+     * must not release a newer editor's guard. Explicit navigation always remains available.
+     */
+    public void setSponsorBlockEditing(@NonNull final Object owner,
+                                      @NonNull final String videoUrl,
+                                      final boolean editing) {
+        if (!editing) {
+            if (sponsorBlockEditingOwner == owner) {
+                clearSponsorBlockEditing();
+            }
+            return;
+        }
+        if (exoPlayerIsNull() || currentMetadata == null
+                || !videoUrl.equals(currentMetadata.getStreamUrl())
+                || currentItem == null || !videoUrl.equals(currentItem.getUrl())) {
+            return;
+        }
+        sponsorBlockEditingOwner = owner;
+        sponsorBlockEditingVideoUrl = videoUrl;
+        simpleExoPlayer.setPauseAtEndOfMediaItems(true);
+    }
+
+    private boolean isSponsorBlockEditingCurrentVideo() {
+        return sponsorBlockEditingOwner != null && currentMetadata != null
+                && currentMetadata.getStreamUrl().equals(sponsorBlockEditingVideoUrl);
+    }
+
+    private void clearSponsorBlockEditing() {
+        sponsorBlockEditingOwner = null;
+        sponsorBlockEditingVideoUrl = null;
+        if (!exoPlayerIsNull()) {
+            simpleExoPlayer.setPauseAtEndOfMediaItems(false);
+        }
+    }
+
     public void playPrevious() {
         if (DEBUG) {
             Log.d(TAG, "onPlayPrevious() called");
@@ -3599,6 +3649,8 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
         if (exoPlayerIsNull() || playQueue == null) {
             return;
         }
+
+        clearSponsorBlockEditing();
 
         /* If current playback has run for PLAY_PREV_ACTIVATION_LIMIT_MILLIS milliseconds,
          * restart current track. Also restart the track if the current track
@@ -3622,6 +3674,7 @@ case ERROR_CODE_DECODER_INIT_FAILED: {
             return;
         }
 
+        clearSponsorBlockEditing();
         saveStreamProgressState();
         playQueue.offsetIndex(+1);
         triggerProgressUpdate();

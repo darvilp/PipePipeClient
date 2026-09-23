@@ -220,6 +220,9 @@ public final class VideoDetailFragment
     @Nullable
     private Disposable positionSubscriber = null;
     private Disposable submitSegmentSubscriber;
+    private Bundle sponsorBlockDraft;
+    private String sponsorBlockSubmissionUrl;
+    private int sponsorBlockSubmissionServiceId;
 
     private List<VideoStream> sortedVideoStreams;
     private int selectedVideoStreamIndex = -1;
@@ -345,6 +348,8 @@ public final class VideoDetailFragment
     @Override
     public void onSaveInstanceState(@NonNull final Bundle outState) {
         super.onSaveInstanceState(outState);
+        getSponsorBlockFragment().ifPresent(editor -> sponsorBlockDraft = editor.saveDraft());
+        outState.putBundle("sponsorBlockDraft", sponsorBlockDraft);
         outState.putInt("serviceId", serviceId);
         outState.putString("title", title);
         outState.putString("url", url);
@@ -356,6 +361,7 @@ public final class VideoDetailFragment
     @Override
     protected void onRestoreInstanceState(@NonNull final Bundle savedInstanceState) {
         super.onRestoreInstanceState(savedInstanceState);
+        sponsorBlockDraft = savedInstanceState.getBundle("sponsorBlockDraft");
         serviceId = savedInstanceState.getInt("serviceId", Constants.NO_SERVICE_ID);
         title = savedInstanceState.getString("title", "");
         url = savedInstanceState.getString("url");
@@ -476,6 +482,8 @@ public final class VideoDetailFragment
         if (submitSegmentSubscriber != null) {
             submitSegmentSubscriber.dispose();
         }
+        sponsorBlockSubmissionUrl = null;
+        getSponsorBlockFragment().ifPresent(editor -> editor.setSubmitting(false));
     }
 
     @Override
@@ -1083,6 +1091,7 @@ public final class VideoDetailFragment
     //////////////////////////////////////////////////////////////////////////*/
 
     private void initTabs() {
+        getSponsorBlockFragment().ifPresent(editor -> sponsorBlockDraft = editor.saveDraft());
         if (pageAdapter.getCount() != 0) {
             selectedTabTag = pageAdapter.getItemTitle(binding.viewPager.getCurrentItem());
         }
@@ -1225,8 +1234,13 @@ public final class VideoDetailFragment
                     tabContentDescriptions.remove(Integer.valueOf(R.string.sponsor_block));
                 }
             } else {
+                getSponsorBlockFragment().ifPresent(editor -> sponsorBlockDraft = editor.saveDraft());
                 final SponsorBlockFragment sponsorBlockFragment = new SponsorBlockFragment(info);
+                sponsorBlockFragment.restoreDraft(sponsorBlockDraft);
+                sponsorBlockDraft = null;
                 sponsorBlockFragment.setListener(this);
+                sponsorBlockFragment.setSubmitting(info.getUrl().equals(sponsorBlockSubmissionUrl)
+                        && info.getServiceId() == sponsorBlockSubmissionServiceId);
 
                 pageAdapter.updateItem(SPONSOR_BLOCK_TAB_TAG, sponsorBlockFragment);
 
@@ -2147,7 +2161,7 @@ public final class VideoDetailFragment
         }
 
         getSponsorBlockFragment().ifPresent(
-                fragment -> fragment.setCurrentProgress(currentProgress));
+                SponsorBlockFragment::refreshEditor);
 
         if (player.getPlayQueue().getItem().getUrl().equals(url)) {
             showPlaybackProgress(currentProgress, duration);
@@ -2156,6 +2170,7 @@ public final class VideoDetailFragment
 
     @Override
     public void onMetadataUpdate(final StreamInfo info, final PlayQueue queue) {
+        getSponsorBlockFragment().ifPresent(SponsorBlockFragment::refreshEditor);
         final Context context = requireContext();
 
         final SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
@@ -2731,6 +2746,9 @@ public final class VideoDetailFragment
     }
 
     private Optional<SponsorBlockFragment> getSponsorBlockFragment() {
+        if (pageAdapter == null) {
+            return Optional.empty();
+        }
         final int sponsorBlockTabPos = pageAdapter.getItemPositionByTitle(SPONSOR_BLOCK_TAB_TAG);
 
         if (sponsorBlockTabPos < 0) {
@@ -2760,12 +2778,9 @@ public final class VideoDetailFragment
     }
 
     @Override
-    public void onRequestNewPendingSegment(final int startTime, final int endTime) {
-        if (currentInfo == null) {
-            return;
-        }
-
-        if (player == null) {
+    public void onRequestNewPendingSegment(final int videoServiceId, final String videoUrl, final int startTime, final int endTime) {
+        if (currentInfo == null || currentInfo.getServiceId() != videoServiceId
+                || !videoUrl.equals(currentInfo.getUrl())) {
             return;
         }
 
@@ -2781,86 +2796,166 @@ public final class VideoDetailFragment
 
         currentInfo.addSponsorBlockSegment(segment);
 
-        player.onMarkSeekbarRequested(currentInfo);
+        if (getSponsorBlockPosition(videoUrl) != null) {
+            player.onMarkSeekbarRequested(currentInfo);
+        }
 
         getSponsorBlockFragment().ifPresent(SponsorBlockFragment::refreshSponsorBlockSegments);
     }
 
     @Override
-    public void onRequestClearPendingSegment() {
-        if (currentInfo == null) {
-            return;
-        }
-
-        if (player == null) {
+    public void onRequestClearPendingSegment(final int videoServiceId, final String videoUrl) {
+        if (currentInfo == null || currentInfo.getServiceId() != videoServiceId
+                || !videoUrl.equals(currentInfo.getUrl())) {
             return;
         }
 
         currentInfo.removeSponsorBlockSegment("TEMP");
 
-        player.onMarkSeekbarRequested(currentInfo);
+        if (getSponsorBlockPosition(videoUrl) != null) {
+            player.onMarkSeekbarRequested(currentInfo);
+        }
 
         getSponsorBlockFragment().ifPresent(SponsorBlockFragment::refreshSponsorBlockSegments);
     }
 
     @Override
-    public void onRequestSubmitPendingSegment(final SponsorBlockSegment newSegment) {
-        if (currentInfo == null) {
+    public Long getSponsorBlockPosition(final String videoUrl) {
+        if (player == null || player.isStopped() || player.getPlayQueue() == null
+                || player.getPlayQueue().getItem() == null
+                || !videoUrl.equals(player.getPlayQueue().getItem().getUrl())
+                || !player.getCurrentStreamInfo().map(info -> videoUrl.equals(info.getUrl())).orElse(false)) {
+            return null;
+        }
+        return player.getCurrentPosition();
+    }
+
+    @Override
+    public Long getSponsorBlockDuration(final String videoUrl) {
+        return getSponsorBlockPosition(videoUrl) == null || player.getDuration() <= 0
+                ? null : player.getDuration();
+    }
+
+    @Override
+    public void onSponsorBlockEditingChanged(final Object owner, final String videoUrl,
+                                              final boolean editing) {
+        if (player != null) {
+            player.setSponsorBlockEditing(owner, videoUrl, editing);
+        }
+    }
+
+    @Override
+    public void onRequestSubmitPendingSegment(final int videoServiceId, final String videoUrl, final SponsorBlockSegment newSegment) {
+        submitSponsorBlockSegment(videoServiceId, videoUrl, newSegment, info -> {
+            final String userId = SponsorBlockHelper.getUserId(requireContext());
+            final String apiUrl = SponsorBlockExtractorHelper.getApiUrl(info);
+            return Single.fromCallable(() -> SponsorBlockExtractorHelper.submitSponsorBlockSegment(
+                    info, newSegment, apiUrl, userId));
+        });
+    }
+
+    void submitSponsorBlockSegment(final int videoServiceId, final String videoUrl,
+            final SponsorBlockSegment newSegment,
+            final java.util.function.Function<StreamInfo,
+                    Single<org.schabi.newpipe.extractor.downloader.Response>> submission) {
+        if (currentInfo == null || currentInfo.getServiceId() != videoServiceId
+                || !videoUrl.equals(currentInfo.getUrl())
+                || submitSegmentSubscriber != null && !submitSegmentSubscriber.isDisposed()) {
             return;
         }
-
-        if (player == null) {
+        final StreamInfo submittedInfo = currentInfo;
+        final SponsorBlockFragment submittedEditor = getSponsorBlockFragment().orElse(null);
+        if (submittedEditor == null) {
             return;
         }
-
+        final long submittedVersion = submittedEditor.getDraftVersion();
+        final String submittedDraftId = submittedEditor.getDraftId();
         final Context context = requireContext();
-        final String userId = SponsorBlockHelper.getUserId(context);
-
-        submitSegmentSubscriber = Single.fromCallable(() ->
-                        SponsorBlockExtractorHelper.submitSponsorBlockSegment(
-                                currentInfo,
-                                newSegment,
-                                SponsorBlockExtractorHelper.getApiUrl(currentInfo),
-                                userId))
+        sponsorBlockSubmissionUrl = videoUrl;
+        sponsorBlockSubmissionServiceId = videoServiceId;
+        submittedEditor.setSubmitting(true);
+        submitSegmentSubscriber = submission.apply(submittedInfo)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(response -> {
+                    sponsorBlockSubmissionUrl = null;
+                    submittedEditor.setSubmitting(false);
+                    getSponsorBlockFragment().filter(editor -> editor.isForVideo(submittedInfo.getServiceId(), videoUrl))
+                            .ifPresent(editor -> editor.setSubmitting(false));
                     final int responseCode = response.responseCode();
-
-                    // 200 = all good
-                    // 409 = all good, but the request timed out
                     if (responseCode != 200 && responseCode != 409) {
-                        String message = response.responseMessage();
-                        if (message.equals("")) {
-                            message = "Error " + responseCode;
-                        }
-                        Toast.makeText(context,
-                                message,
-                                Toast.LENGTH_SHORT).show();
+                        final String message = response.responseMessage().isEmpty()
+                                ? "Error " + responseCode : response.responseMessage();
+                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show();
                         return;
                     }
-
-                    currentInfo.removeSponsorBlockSegment("TEMP");
-                    currentInfo.addSponsorBlockSegment(newSegment);
-
-                    player.onMarkSeekbarRequested(currentInfo);
-
-                    getSponsorBlockFragment().ifPresent(
-                            SponsorBlockFragment::clearPendingSegment);
-
-                    new AlertDialog
-                            .Builder(context)
-                            .setMessage(R.string.sponsor_block_upload_success_message)
-                            .setPositiveButton(R.string.ok, (d, w) -> d.dismiss())
-                            .show();
+                    final boolean sameDraft = applySponsorBlockSubmission(
+                            submittedInfo, newSegment, submittedDraftId, submittedVersion, submittedEditor);
+                    if (sameDraft && isAdded() && binding != null) {
+                        new AlertDialog.Builder(requireContext())
+                                .setMessage(R.string.sponsor_block_upload_success_message)
+                                .setPositiveButton(R.string.ok, null).show();
+                    }
                 }, throwable -> {
-                    if (throwable instanceof NullPointerException) {
-                        return;
+                    sponsorBlockSubmissionUrl = null;
+                    submittedEditor.setSubmitting(false);
+                    getSponsorBlockFragment().filter(editor -> editor.isForVideo(submittedInfo.getServiceId(), videoUrl))
+                            .ifPresent(editor -> editor.setSubmitting(false));
+                    if (isAdded() && binding != null) {
+                        ErrorUtil.showSnackbar(requireContext(), new ErrorInfo(throwable,
+                                UserAction.USER_REPORT, "Submit SponsorBlock segment"));
                     }
-                    ErrorUtil.showSnackbar(context,
-                            new ErrorInfo(throwable, UserAction.USER_REPORT,
-                                    "Submit SponsorBlock segment"));
                 });
+    }
+
+    // Separated from transport so delayed completions can be tested without network/player setup.
+    boolean applySponsorBlockSubmission(final StreamInfo submittedInfo,
+                                        final SponsorBlockSegment newSegment,
+                                        final String submittedDraftId,
+                                        final long submittedVersion,
+                                        final SponsorBlockFragment submittedEditor) {
+        final String videoUrl = submittedInfo.getUrl();
+        final SponsorBlockFragment activeEditor = getSponsorBlockFragment()
+                .filter(editor -> editor.isForVideo(submittedInfo.getServiceId(), videoUrl)).orElse(null);
+        final boolean savedDraftMatches = sponsorBlockDraft != null
+                && videoUrl.equals(sponsorBlockDraft.getString("videoUrl"))
+                && submittedInfo.getServiceId() == sponsorBlockDraft.getInt("serviceId");
+        final long latestVersion = activeEditor != null ? activeEditor.getDraftVersion()
+                : savedDraftMatches ? sponsorBlockDraft.getLong("version", 0)
+                : submittedEditor.getDraftVersion();
+        final String latestDraftId = activeEditor != null ? activeEditor.getDraftId()
+                : savedDraftMatches ? sponsorBlockDraft.getString("draftId")
+                : submittedEditor.getDraftId();
+        final boolean unchanged = submittedDraftId.equals(latestDraftId)
+                && latestVersion == submittedVersion;
+        submittedInfo.addSponsorBlockSegment(newSegment);
+        if (unchanged) {
+            submittedInfo.removeSponsorBlockSegment("TEMP");
+            if (savedDraftMatches) {
+                sponsorBlockDraft = null;
+            }
+        }
+        final boolean showingVideo = currentInfo != null
+                && submittedInfo.getServiceId() == currentInfo.getServiceId()
+                && videoUrl.equals(currentInfo.getUrl());
+        if (showingVideo && currentInfo != submittedInfo) {
+            currentInfo.addSponsorBlockSegment(newSegment);
+        }
+        if (unchanged) {
+            if (activeEditor != null) {
+                activeEditor.clearPendingSegment();
+            }
+            if (showingVideo) {
+                currentInfo.removeSponsorBlockSegment("TEMP");
+            }
+        }
+        if (showingVideo) {
+            if (getSponsorBlockPosition(videoUrl) != null) {
+                player.onMarkSeekbarRequested(currentInfo);
+            }
+            getSponsorBlockFragment().ifPresent(SponsorBlockFragment::refreshSponsorBlockSegments);
+        }
+        return unchanged && activeEditor != null;
     }
 
     @Override

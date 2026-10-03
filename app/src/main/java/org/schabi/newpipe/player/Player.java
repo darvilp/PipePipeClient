@@ -472,7 +472,10 @@ public final class Player {
     }
 
     public void setRecovery() {
-        if (playQueue == null || exoPlayerIsNull()) {
+        if (playQueue == null || exoPlayerIsNull()
+                || playQueue.getIndex() != simpleExoPlayer.getCurrentMediaItemIndex()) {
+            // A queue selection can precede ExoPlayer's timeline update. Do not save the old
+            // item's position on the newly selected entry.
             return;
         }
 

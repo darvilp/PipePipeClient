@@ -31,6 +31,9 @@ object PlayerIntentConstants {
     /** Whether the queue should be inserted right after the currently playing item. */
     const val ENQUEUE_NEXT = "enqueue_next"
 
+    /** Insert immediately after the current item and start the inserted item. */
+    const val ENQUEUE_NEXT_AND_PLAY = "enqueue_next_and_play"
+
     /** Repeat mode to apply when starting playback. */
     const val REPEAT_MODE = "repeat_mode"
 

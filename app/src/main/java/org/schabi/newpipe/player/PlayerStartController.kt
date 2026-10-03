@@ -31,6 +31,18 @@ class PlayerStartController(private val player: Player) {
         val newQueue = SerializedCache.getInstance().take(queueCache, PlayQueue::class.java)
             ?: return
 
+        val activeQueue = player.playQueue
+        if (intent.getBooleanExtra(PlayerIntentConstants.ENQUEUE_NEXT_AND_PLAY, false)
+            && activeQueue != null
+        ) {
+            val itemToPlay = newQueue.getItem() ?: return
+            player.saveStreamProgressState()
+            activeQueue.insertNextAndSelect(itemToPlay)
+            player.notifyQueueUpdateToListeners()
+            player.play()
+            return
+        }
+
         val oldPlayerType = player.playerType
         player.setPlayerType(PlayerHelper.retrievePlayerTypeFromIntent(intent))
         // We need to setup audioOnly before super(), see "sourceOf"

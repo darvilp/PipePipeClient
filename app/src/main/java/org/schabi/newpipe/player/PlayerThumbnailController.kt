@@ -125,14 +125,14 @@ class PlayerThumbnailController(private val player: Player) {
         val thumbnail = currentThumbnail!!
 
         return if (DeviceUtils.isTv(player.context) && !player.isFullscreen) {
-            val videoInfoHeight = DeviceUtils.dpToPx(85, player.context)
-                + DeviceUtils.spToPx(16, player.context)
+            val videoInfoHeight = DeviceUtils.dpToPx(85, player.context) +
+                DeviceUtils.spToPx(16, player.context)
             minOf(thumbnail.height.toFloat(), screenHeight - videoInfoHeight)
         } else if (DeviceUtils.isTablet(player.context)
             && player.service.isLandscape && !player.isFullscreen
         ) {
-            val videoInfoHeight = DeviceUtils.dpToPx(85, player.context)
-                + DeviceUtils.spToPx(15, player.context)
+            val videoInfoHeight = DeviceUtils.dpToPx(85, player.context) +
+                DeviceUtils.spToPx(15, player.context)
             minOf(thumbnail.height.toFloat(), screenHeight - videoInfoHeight)
         } else { // fullscreen player: max height is the device height
             minOf(thumbnail.height.toFloat(), screenHeight)

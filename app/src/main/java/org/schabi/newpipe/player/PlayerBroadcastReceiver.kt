@@ -5,9 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
-import android.os.Build
 import android.util.Log
 import android.view.WindowManager
+import androidx.core.content.ContextCompat
 import org.schabi.newpipe.fragments.detail.VideoDetailFragment
 import org.schabi.newpipe.util.DeviceUtils
 import org.schabi.newpipe.util.Localization.assureCorrectAppLanguage
@@ -163,11 +163,9 @@ class PlayerBroadcastReceiver(private val player: Player) {
     fun register() {
         // Try to unregister current first
         unregister()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(broadcastReceiver, intentFilter, Context.RECEIVER_EXPORTED)
-        } else {
-            context.registerReceiver(broadcastReceiver, intentFilter)
-        }
+        ContextCompat.registerReceiver(
+            context, broadcastReceiver, intentFilter, ContextCompat.RECEIVER_EXPORTED
+        )
     }
 
     fun unregister() {

@@ -220,6 +220,7 @@ public final class VideoDetailFragment
     // Keep an explicit navigation request separate from asynchronous active-queue updates.
     @Nullable
     private PlayQueue pendingPlaybackQueue;
+    private boolean pendingDirectFullscreen;
     int bottomSheetState = BottomSheetBehavior.STATE_EXPANDED;
     protected boolean autoPlayEnabled = true;
     SponsorBlockMode currentSponsorBlockMode = null;
@@ -284,7 +285,8 @@ public final class VideoDetailFragment
                 && isAutoplayEnabled()
                 && player.getParentActivity() == null)) {
             autoPlayEnabled = true; // forcefully start playing
-            openVideoPlayerAutoFullscreen();
+            openVideoPlayer(pendingDirectFullscreen
+                    || PlayerHelper.isStartMainPlayerFullscreenEnabled(requireContext()));
         }
     }
 
@@ -371,6 +373,7 @@ public final class VideoDetailFragment
             outState.putString("pendingPlaybackQueue", SerializedCache.getInstance()
                     .put(pendingPlaybackQueue, PlayQueue.class));
         }
+        outState.putBoolean("pendingDirectFullscreen", pendingDirectFullscreen);
         outState.putString("currentSponsorBlockMode", currentSponsorBlockMode != null ? currentSponsorBlockMode.name() : null);
     }
 
@@ -389,6 +392,7 @@ public final class VideoDetailFragment
         if (pendingPlaybackQueue != null) {
             playQueue = pendingPlaybackQueue;
         }
+        pendingDirectFullscreen = savedInstanceState.getBoolean("pendingDirectFullscreen", false);
         String modeStr = savedInstanceState.getString("currentSponsorBlockMode");
         currentSponsorBlockMode = modeStr != null ? SponsorBlockMode.valueOf(modeStr) : null;
     }
@@ -959,6 +963,7 @@ public final class VideoDetailFragment
 
     private void setupFromHistoryItem(final StackItem item) {
         pendingPlaybackQueue = null;
+        cancelPendingFullscreen();
         setAutoPlay(false);
         setInitialData(item.getServiceId(), item.getUrl(),
                 item.getTitle() == null ? "" : item.getTitle(), item.getPlayQueue());
@@ -1010,6 +1015,7 @@ public final class VideoDetailFragment
             continueAudioAndDetachMainPlayerForBrowsing();
         }
 
+        cancelPendingFullscreen();
         setInitialData(newServiceId, newUrl, newTitle, newQueue);
         pendingPlaybackQueue = newQueue;
         startLoading(false, true);
@@ -1414,21 +1420,29 @@ public final class VideoDetailFragment
     }
 
     private void prepareMainPlayerUi(final boolean directlyFullscreenIfApplicable) {
-        if (directlyFullscreenIfApplicable) {
-            // Make sure the bottom sheet turns out expanded. When this code kicks in the bottom
-            // sheet could not have fully expanded yet, and thus be in the STATE_SETTLING state.
-            // When the activity is rotated, and its state is saved and then restored, the bottom
-            // sheet would forget what it was doing, since even if STATE_SETTLING is restored, it
-            // doesn't tell which state it was settling to, and thus the bottom sheet settles to
-            // STATE_COLLAPSED. This can be solved by manually setting the state that will be
-            // restored (i.e. bottomSheetState) to STATE_EXPANDED.
-            bottomSheetState = BottomSheetBehavior.STATE_EXPANDED;
-            // Without a connected player there is nothing to ask here, but onServiceConnected()
-            // issues the very same request as soon as the service started for this playback
-            // connects, and the player keeps a request it cannot honor until it is set up.
-            if (isPlayerAvailable()) {
-                player.changeFullscreen(true);
-            }
+        if (!directlyFullscreenIfApplicable) {
+            cancelPendingFullscreen();
+            return;
+        }
+        pendingDirectFullscreen = true;
+        // Settling is not restorable; preserve the requested expanded destination.
+        bottomSheetState = BottomSheetBehavior.STATE_EXPANDED;
+        applyPendingFullscreen();
+    }
+
+    private void applyPendingFullscreen() {
+        if (pendingDirectFullscreen && binding != null && isPlayerAvailable()
+                && player.videoPlayerSelected()) {
+            // The v5.4 controller owns readiness once the service can accept this request.
+            pendingDirectFullscreen = false;
+            player.changeFullscreen(true);
+        }
+    }
+
+    private void cancelPendingFullscreen() {
+        pendingDirectFullscreen = false;
+        if (player != null) {
+            player.cancelPendingFullscreen();
         }
     }
 
@@ -2366,6 +2380,10 @@ public final class VideoDetailFragment
                                  final RepeatMode repeatMode,
                                  final boolean shuffled,
                                  final PlayerPlaybackParameters parameters) {
+        if (binding == null) {
+            return;
+        }
+        applyPendingFullscreen();
         setOverlayPlayPauseImage(player != null && player.isPlaying());
 
         switch (state) {
@@ -2459,6 +2477,7 @@ public final class VideoDetailFragment
 
     @Override
     public void onServiceStopped() {
+        cancelPendingFullscreen();
         if (binding != null) {
             setOverlayPlayPauseImage(false);
             if (currentInfo != null) {
@@ -2687,6 +2706,7 @@ public final class VideoDetailFragment
         if (currentWorker != null) {
             currentWorker.dispose();
         }
+        cancelPendingFullscreen();
         playerHolder.stopService();
         pendingPlaybackQueue = null;
         setInitialData(0, null, "", null);

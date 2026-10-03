@@ -25,6 +25,35 @@ import org.schabi.newpipe.util.SponsorBlockSecondaryMode
  */
 class SponsorBlockController(private val player: Player) {
 
+    private var editingOwner: Any? = null
+    private var editingVideoUrl: String? = null
+
+    /** A draft belongs to one editor and video; stale owners cannot release a newer hold. */
+    fun setEditing(owner: Any, videoUrl: String, editing: Boolean) {
+        if (!editing) {
+            if (editingOwner === owner) clearEditing()
+            return
+        }
+        if (player.exoPlayerIsNull() || player.currentMetadata?.url != videoUrl
+            || player.currentItem?.url != videoUrl) return
+        editingOwner = owner
+        editingVideoUrl = videoUrl
+        player.simpleExoPlayer.setPauseAtEndOfMediaItems(true)
+    }
+
+    fun isEditingCurrentVideo(): Boolean = editingOwner != null
+        && player.currentMetadata?.url == editingVideoUrl
+
+    fun onMetadataChanged() {
+        if (editingOwner != null && !isEditingCurrentVideo()) clearEditing()
+    }
+
+    fun clearEditing() {
+        editingOwner = null
+        editingVideoUrl = null
+        if (!player.exoPlayerIsNull()) player.simpleExoPlayer.setPauseAtEndOfMediaItems(false)
+    }
+
     private companion object {
         const val TAG = "SPONSOR_BLOCK"
     }

@@ -63,6 +63,7 @@ class PlayerMetadataController(private val player: Player) {
             val previousInfo = Optional.ofNullable(currentMetadata)
                 .flatMap { item: PlayerMediaItem -> item.maybeStreamInfo }.orElse(null)
             currentMetadata = tag
+            player.sponsorBlockController.onMetadataChanged()
 
             if (tag.errors.isNotEmpty()) {
                 // new errors might have been added even if previousInfo == tag.getMaybeStreamInfo()

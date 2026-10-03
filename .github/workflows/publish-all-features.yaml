@@ -21,6 +21,9 @@ jobs:
           fetch-depth: 0
           path: PipePipeClient
 
+      - name: Test release entry point
+        run: python3 PipePipeClient/tools/test_release.py
+
       - name: Read pinned extractor revision
         id: source
         shell: bash
@@ -77,7 +80,7 @@ jobs:
         run: |
           set -euo pipefail
           parent="$RUNNER_TEMP/pipepipe-all-features-assets"
-          bash PipePipeClient/tools/build-unofficial-release.sh "$parent"
+          python3 PipePipeClient/tools/release.py --output "$parent"
           mapfile -t candidates < <(find "$parent" -mindepth 1 -maxdepth 1 -type d -print)
           ((${#candidates[@]} == 1)) || { echo "Expected exactly one candidate directory" >&2; exit 1; }
           echo "PIPEPIPE_ASSET_DIR=${candidates[0]}" >> "$GITHUB_ENV"

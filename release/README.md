@@ -21,33 +21,55 @@ git -C PipePipeExtractor checkout --detach "$extractor_revision"
 
 Both checkouts must be clean. The sibling extractor layout is required by `settings.gradle`. The build script checks the extractor revision, the client integration ancestry and the tracked `ffmpeg/ffmpeg-kit.aar` SHA-256. Retain the project licenses and dependency notices when distributing corresponding source and binaries.
 
-## Build a candidate
+## One entry point for local and CI releases
 
-Use JDK 25, Python 3.11 or later, and an Android SDK with compile SDK 37 and build-tools 37.0.0. Set `JAVA_HOME` and `ANDROID_HOME` for that installation. The repository supplies Gradle 9.5.1.
-
-Provide `KEY_PATH`, `KEY_STORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD` through the private build environment. Use the durable key matching `signer_sha256` in the manifest. Do not commit a keystore, passwords or local signing paths. A different key cannot update the existing installation.
+From the client checkout, run:
 
 ```bash
-cd PipePipeClient
-tools/build-unofficial-release.sh
+python3 tools/release.py --check  # preflight only; no build or export
+python3 tools/release.py          # signed local test-drive candidate
 ```
 
-The script refuses missing signing inputs and dirty or mismatched source. It runs JVM tests, release assembly and release lint, then verifies every ABI APK's package, version, non-debuggable manifest, SDK range, native ABI, 16 KB zip alignment and signing certificate. It emits a timestamped directory under `build/unofficial`, including four APKs, checksums, manifests and release notes. It refuses an existing candidate directory. An optional first argument selects the parent output directory.
+GitHub Actions calls this same entry point with `--output`. `tools/build-unofficial-release.sh` is its internal build backend; do not create per-release wrappers or invoke Gradle directly to produce a distributable APK. The entry point never pushes, tags, creates a release or publishes anything.
 
-The current counter is base version code `1115`, producing arm64 code `111504`, with version name `5.4.0-unofficial.8`. Increment the fork counter for every subsequent distributed build, independently of the upstream version name. Never overwrite an old APK or reuse a public release tag.
+Use JDK 25, Python 3.11 or later, and the Android SDK versions in `source-manifest.json`. The script honors `JAVA_HOME` and `ANDROID_HOME`/`ANDROID_SDK_ROOT`. On this WSL host it can discover the installed JDK 25 and `~/Android/Sdk`; CI provisions the manifest toolchain explicitly. The backend uses two Gradle workers by default, Kotlin compilation in-process, a 4 GiB JVM heap and no configuration cache. Set `UNOFFICIAL_MAX_WORKERS` only when needed.
+
+### Private signing configuration
+
+The standard local configuration is `${XDG_CONFIG_HOME:-$HOME/.config}/pipepipe/release.env`. This host has a private link there to the existing signing setup. `PIPEPIPE_RELEASE_ENV` may select a different private file. No chat-history search or temporary credential reconstruction should be needed again.
+
+The file contains literal `NAME=value` assignments, optionally with `export`, shell quoting and comments. It is parsed as data, never sourced as shell code. Use absolute paths or `~`; shell substitutions and variable expansion are not performed. Keep the file private, outside Git. The accepted settings are:
+
+- `KEY_PATH`, `KEY_STORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
+- Existing `KEYSTORE_FILE` and `KEYSTORE_PASSWORD` are accepted as aliases for `KEY_PATH` and `KEY_STORE_PASSWORD`.
+- Optional `JAVA_HOME`, `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `UNOFFICIAL_MAX_WORKERS`, `PIPEPIPE_RELEASE_OUTPUT`.
+
+Nonempty process environment values override the file, including legacy aliases. Canonical names take precedence over legacy names within each source. CI skips automatic local-file loading and uses its four GitHub secrets; an explicitly selected file is still honored. Never print or commit a keystore, alias, password, base64 payload or actual private setup path. Never generate a substitute key. Preflight checks the selected private-key certificate against `signer_sha256` before Gradle runs. Build output masks the loaded signing values.
+
+The GitHub workflow maps `PIPEPIPE_ALL_FEATURES_KEYSTORE_BASE64`, `PIPEPIPE_ALL_FEATURES_KEYSTORE_PASSWORD`, `PIPEPIPE_ALL_FEATURES_KEY_ALIAS`, and `PIPEPIPE_ALL_FEATURES_KEY_PASSWORD` to the same signing inputs. Check their names with `gh secret list --repo darvilp/PipePipeClient` if diagnosing CI setup; their presence does not replace the local private key file.
+
+### What each run verifies and exports
+
+Both modes require clean client and sibling extractor checkouts and check source pins, integration ancestry, FFmpeg hash, Gradle/version metadata, toolchain and signer. Build mode additionally runs JVM tests, release assembly and the unchanged lint baseline, then verifies every ABI APK's package, version, non-debuggable manifest, SDK range, native ABI, 16 KB ZIP alignment and certificate.
+
+Each successful build writes four APKs, `SHA256SUMS`, per-ABI manifests, the exact source manifest and release notes into a new timestamped directory. Local WSL exports default to `E:\apks\pipepipe-all-features` when `/mnt/e/apks` exists; otherwise they use `build/unofficial`. Override with `--output <directory>` or `PIPEPIPE_RELEASE_OUTPUT`. The script refuses an existing candidate directory. Report the exact arm64 filename, SHA-256 and signer to the tester.
+
+Before every newly distributed app build, increment the fork counter and base version code in `app/build.gradle` and match `source-manifest.json`. Do not automatically modify versions or commit source during a release run. Do not overwrite old APKs or reuse a public tag. Documentation/tooling changes alone do not replace an already tested APK; retain its original source commit and hash.
+
+Run `python3 tools/test_release.py` when changing the entry point; CI runs the same checks before loading signing secrets.
 
 ## Validation limits and lint baseline
 
-The original integration source `76cd32aa3` reports 1,237 lint error/fatal findings, including 1,132 `ExtraTranslation` findings. The reviewed corrections produce the identical error set. This is **not a clean lint result**. `lint-errors-baseline.json` records the original findings by issue, message, relative path and count. The release script rejects additional error/fatal findings and reports the remaining existing findings. Do not regenerate that baseline from a failing candidate to make the check pass.
+The original integration source `76cd32aa3` reports 1,237 lint error/fatal findings, including 1,132 `ExtraTranslation` findings. Current counts are reported by the release gate. Passing the baseline is **not a clean lint result**. `lint-errors-baseline.json` records the original findings by issue, message, relative path and count. The release script rejects additional error/fatal findings and reports the remaining existing findings. Do not regenerate that baseline from a failing candidate to make the check pass.
 
-Android callback, database and continuous-drag regressions accompany the fixes. These tests do not replace testing the signed, minified candidate on a device. Before publishing, record the candidate hash and verify an in-place upgrade, preserved subscriptions/playlists/settings, queue gestures in both queue screens, explicit playlist replacement and Next, browsing-overlay advancement, fullscreen/orientation, speed/pitch, and hidden playback. The earlier SABR diagnostic was unproven and is removed on this release branch; its removal is not a claim that the reported hidden-playback failure is solved.
+Android callback, database and continuous-drag regressions accompany the fixes. These tests do not replace testing the signed, minified candidate on a device. Before publishing, record the candidate source commit, hash and device acceptance and verify an in-place upgrade, preserved subscriptions/playlists/settings, queue gestures in both queue screens, explicit playlist replacement and Next, browsing-overlay advancement, fullscreen/orientation, speed/pitch, and hidden playback. The earlier SABR diagnostic was unproven and is removed on this release branch; its removal is not a claim that the reported hidden-playback failure is solved.
 
 ## Publication
 
 After candidate acceptance and publication approval:
 
 1. Make both exact source revisions available on the fork repositories using normal pushes.
-2. Tag the tested client commit, for example `all-features/v5.4.0-unofficial.8`, refusing an existing tag.
+2. Tag the accepted client commit as `all-features/v<version_name>` from its manifest, refusing an existing tag.
 3. Let the tag workflow create a draft prerelease in `darvilp/PipePipeClient` with the four verified ABI APKs, checksums, generated manifests and release notes.
 4. Verify the draft target and downloaded asset hashes before publishing it as a prerelease.
 

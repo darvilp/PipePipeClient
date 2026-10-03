@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Internal build backend. Use python3 tools/release.py for local and CI releases.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 release_root=$(pwd -P)
@@ -22,12 +23,27 @@ actual = subprocess.check_output(['git', '-C', '../PipePipeExtractor', 'rev-pars
 if actual != m['extractor_commit']:
     raise SystemExit('Extractor revision does not match release/source-manifest.json')
 subprocess.run(['git', 'merge-base', '--is-ancestor', m['integration_commit'], 'HEAD'], check=True)
+import re
+build = Path('app/build.gradle').read_text()
+if re.search(r'def appVersionName = "([^"]+)"', build)[1] != m['version_name']:
+    raise SystemExit('Gradle version name does not match release manifest')
+if int(re.search(r'def baseVersionCode = (\d+)', build)[1]) != m['base_version_code']:
+    raise SystemExit('Gradle version code does not match release manifest')
+wrapper = Path('gradle/wrapper/gradle-wrapper.properties').read_text()
+if f"gradle-{m['gradle_version']}-" not in wrapper:
+    raise SystemExit('Gradle wrapper does not match release manifest')
 with open('ffmpeg/ffmpeg-kit.aar', 'rb') as stream:
     if hashlib.file_digest(stream, 'sha256').hexdigest() != m['ffmpeg_aar_sha256']:
         raise SystemExit('FFmpeg AAR does not match pinned source hash')
 PY
+if [[ ${1:-} == --check ]]; then
+    echo 'Release preflight passed: clean client/extractor, pinned source, versions and FFmpeg.'
+    exit 0
+fi
 ./gradlew :app:testDebugUnitTest :app:assembleRelease :app:lintRelease \
-    --max-workers="${UNOFFICIAL_MAX_WORKERS:-2}" --console=plain
+    --max-workers="${UNOFFICIAL_MAX_WORKERS:-2}" --console=plain \
+    --no-configuration-cache -Pkotlin.compiler.execution.strategy=in-process \
+    -Dorg.gradle.jvmargs='-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8'
 python3 tools/check-release-lint.py app/build/reports/lint-results-release.xml
 [[ "$release_source" == $(git rev-parse HEAD) && -z $(git status --porcelain) ]] || {
     echo 'Client source changed during build' >&2; exit 1;

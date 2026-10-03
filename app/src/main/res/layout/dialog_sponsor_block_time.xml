@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:orientation="vertical" android:padding="24dp">
+    <EditText android:id="@+id/time_input" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:minHeight="48dp"
+        android:inputType="text|textNoSuggestions" android:singleLine="true"
+        android:hint="@string/sponsor_block_time_hint" android:selectAllOnFocus="true" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="@string/sponsor_block_time_help" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button android:minHeight="48dp" style="?android:attr/buttonBarButtonStyle" android:id="@+id/time_minus" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="@string/sponsor_block_minus"
+            android:contentDescription="@string/sponsor_block_minus_description" />
+        <Button android:minHeight="48dp" style="?android:attr/buttonBarButtonStyle" android:id="@+id/time_plus" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="@string/sponsor_block_plus"
+            android:contentDescription="@string/sponsor_block_plus_description" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button android:minHeight="48dp" style="?android:attr/buttonBarButtonStyle" android:id="@+id/video_start" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="@string/sponsor_block_video_start" />
+        <Button android:minHeight="48dp" style="?android:attr/buttonBarButtonStyle" android:id="@+id/video_end" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="@string/sponsor_block_video_end" />
+    </LinearLayout>
+</LinearLayout>

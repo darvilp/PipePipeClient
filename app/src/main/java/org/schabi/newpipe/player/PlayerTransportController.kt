@@ -93,6 +93,8 @@ class PlayerTransportController(private val player: Player) {
             return
         }
 
+        player.sponsorBlockController.clearEditing()
+
         /* If current playback has run for PLAY_PREV_ACTIVATION_LIMIT_MILLIS milliseconds,
          * restart current track. Also restart the track if the current track
          * is the first in a queue.*/
@@ -117,6 +119,7 @@ class PlayerTransportController(private val player: Player) {
             return
         }
 
+        player.sponsorBlockController.clearEditing()
         player.saveStreamProgressState()
         playQueue.offsetIndex(+1)
         player.triggerProgressUpdate()
@@ -237,6 +240,7 @@ class PlayerTransportController(private val player: Player) {
         if (!hasPlayQueueItemChanged) {
             return
         }
+        player.sponsorBlockController.clearEditing()
         player.setCurrentItem(item)
 
         // Check if on wrong window

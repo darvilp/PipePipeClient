@@ -416,6 +416,7 @@ public final class Player {
             Log.d(TAG, "destroyPlayer() called");
         }
 
+        sponsorBlockController.clearEditing();
         liveIdle = false;
         stopSabrBackoffCountdown();
         surfaceController.cleanupVideoSurface();
@@ -969,6 +970,10 @@ public final class Player {
             return;
         }
 
+        if (oldPosition.mediaItemIndex != newPosition.mediaItemIndex) {
+            sponsorBlockController.clearEditing();
+        }
+
         // Refresh the playback if there is a transition to the next video
         final int newIndex = newPosition.mediaItemIndex;
         switch (discontinuityReason) {
@@ -1108,6 +1113,12 @@ public final class Player {
 
     public void playPause() {
         transportController.playPause();
+    }
+
+    public void setSponsorBlockEditing(@NonNull final Object owner,
+                                      @NonNull final String videoUrl,
+                                      final boolean editing) {
+        sponsorBlockController.setEditing(owner, videoUrl, editing);
     }
 
     public void playPrevious() {

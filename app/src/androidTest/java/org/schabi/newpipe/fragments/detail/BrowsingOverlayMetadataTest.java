@@ -25,6 +25,7 @@ import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 import org.schabi.newpipe.extractor.stream.StreamType;
 import org.schabi.newpipe.player.Player;
+import org.schabi.newpipe.player.SponsorBlockController;
 import org.schabi.newpipe.player.PlayerService.PlayerType;
 import org.schabi.newpipe.player.mediasession.PlayerServiceInterface;
 import org.schabi.newpipe.player.playqueue.PlayQueue;
@@ -99,9 +100,8 @@ public class BrowsingOverlayMetadataTest {
             } finally {
                 if (player != null) {
                     try {
-                        prefs.unregisterOnSharedPreferenceChangeListener(
-                                (android.content.SharedPreferences.OnSharedPreferenceChangeListener)
-                                        getField(Player.class, player, "preferenceChangeListener"));
+                        ((SponsorBlockController) getField(Player.class, player,
+                                "sponsorBlockController")).destroy();
                     } catch (final ReflectiveOperationException error) {
                         throw new AssertionError(error);
                     }

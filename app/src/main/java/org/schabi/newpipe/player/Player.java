@@ -1311,6 +1311,10 @@ public final class Player {
      * Enter or leave fullscreen, letting the screen orientation follow the player. This is the
      * entry point for everything outside the player.
      */
+    public void cancelPendingFullscreen() {
+        uiModeController.cancelPendingFullscreen();
+    }
+
     public void changeFullscreen(final boolean fullscreen) {
         uiModeController.changeFullscreen(fullscreen);
     }

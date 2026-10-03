@@ -42,6 +42,10 @@ class PlayerUiModeController(private val player: Player) {
      * Enter or leave fullscreen and let the requested screen orientation follow the player. This
      * is what everything outside the player asks for.
      */
+    fun cancelPendingFullscreen() {
+        pendingFullscreen = false
+    }
+
     fun changeFullscreen(fullscreen: Boolean) {
         if (!fullscreen) {
             // Leaving fullscreen is also the answer to "do you still want that fullscreen?".

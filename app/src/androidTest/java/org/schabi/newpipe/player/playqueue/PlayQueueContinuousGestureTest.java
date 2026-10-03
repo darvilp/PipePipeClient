@@ -24,6 +24,7 @@ import androidx.test.platform.app.InstrumentationRegistry;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.schabi.newpipe.MainActivity;
+import org.schabi.newpipe.player.mediaitem.PlayerMediaItem;
 import org.schabi.newpipe.R;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 import org.schabi.newpipe.extractor.stream.StreamType;
@@ -99,7 +100,7 @@ public class PlayQueueContinuousGestureTest {
         private PlayQueueAdapter adapter;
         private ItemTouchHelper helper;
         private RecyclerView.ViewHolder selected;
-        private PlayQueueItem dragged;
+        private PlayerMediaItem dragged;
         private int moves;
         private float x;
         private float y;
@@ -145,10 +146,10 @@ public class PlayQueueContinuousGestureTest {
                 adapter = new PlayQueueAdapter(activity, queue);
                 adapter.setSelectedListener(new PlayQueueItemBuilder.OnSelectedListener() {
                     @Override
-                    public void selected(final PlayQueueItem item, final View view) { }
+                    public void selected(final PlayerMediaItem item, final View view) { }
 
                     @Override
-                    public void held(final PlayQueueItem item, final View view) { }
+                    public void held(final PlayerMediaItem item, final View view) { }
 
                     @Override
                     public void onStartDrag(final PlayQueueItemHolder holder) {

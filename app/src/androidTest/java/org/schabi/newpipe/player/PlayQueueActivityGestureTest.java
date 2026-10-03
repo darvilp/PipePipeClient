@@ -26,7 +26,7 @@ import org.schabi.newpipe.R;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 import org.schabi.newpipe.extractor.stream.StreamType;
 import org.schabi.newpipe.player.playqueue.PlayQueue;
-import org.schabi.newpipe.player.playqueue.PlayQueueItem;
+import org.schabi.newpipe.player.mediaitem.PlayerMediaItem;
 import org.schabi.newpipe.player.playqueue.SinglePlayQueue;
 import org.schabi.newpipe.util.DeviceUtils;
 import org.schabi.newpipe.util.NavigationHelper;
@@ -49,7 +49,7 @@ public class PlayQueueActivityGestureTest {
     private RecyclerView recycler;
     private LinearLayoutManager layout;
     private PlayQueue queue;
-    private PlayQueueItem dragged;
+    private PlayerMediaItem dragged;
     private float x;
     private float y;
     private int rowHeight;

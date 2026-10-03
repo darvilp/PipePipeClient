@@ -17,6 +17,16 @@ import org.schabi.newpipe.player.resolver.VideoPlaybackResolver.SourceType
  */
 class PlayerSourceController(private val player: Player) {
 
+    var isMainPlayerDetailsBrowsing = false
+
+    /** Keep the active main queue playing as audio while another detail page is shown. */
+    fun setDetailsBrowsing(browsing: Boolean) {
+        isMainPlayerDetailsBrowsing = browsing
+        if (player.videoPlayerSelected()) {
+            useVideoSource(!browsing)
+        }
+    }
+
     /**
      * This will be called when a user goes to another app/activity, turns off a screen.
      * We don't want to interrupt playback and don't want to see notification so

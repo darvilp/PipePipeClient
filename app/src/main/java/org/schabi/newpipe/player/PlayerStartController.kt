@@ -54,6 +54,8 @@ class PlayerStartController(private val player: Player) {
             return
         }
 
+        player.sourceController.isMainPlayerDetailsBrowsing = false
+
         val parametersBuilder = player.trackSelector.buildUponParameters()
         parametersBuilder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, player.audioPlayerSelected())
         parametersBuilder.setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, player.audioPlayerSelected())

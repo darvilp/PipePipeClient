@@ -98,7 +98,7 @@ class PlayerBroadcastReceiver(private val player: Player) {
             }
             VideoDetailFragment.ACTION_VIDEO_FRAGMENT_RESUMED -> {
                 player.listeners.isFragmentVisible = true
-                player.useVideoSource(true)
+                player.useVideoSource(!player.sourceController.isMainPlayerDetailsBrowsing)
             }
             VideoDetailFragment.ACTION_VIDEO_FRAGMENT_STOPPED -> {
                 player.listeners.isFragmentVisible = false

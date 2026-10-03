@@ -1414,6 +1414,14 @@ public final class Player {
         return (AppCompatActivity) ((ViewGroup) binding.getRoot().getParent()).getContext();
     }
 
+    public void setMainPlayerDetailsBrowsing(final boolean browsing) {
+        sourceController.setDetailsBrowsing(browsing);
+    }
+
+    PlayerSourceController getSourceController() {
+        return sourceController;
+    }
+
     void useVideoSource(final boolean videoEnabled) {
         sourceController.useVideoSource(videoEnabled);
     }

@@ -198,6 +198,7 @@ class PopupWindowController(private val player: Player) {
     }
 
     fun removePopupFromView() {
+        closeOverlayBinding?.closeButton?.animate()?.setListener(null)?.cancel()
         val manager = windowManager ?: return
 
         // Close popup menus before removing from view to prevent crash
@@ -206,7 +207,7 @@ class PopupWindowController(private val player: Player) {
         // wrap in try-catch since it could sometimes generate errors randomly
         try {
             if (popupHasParent()) {
-                manager.removeView(player.binding.root)
+                manager.removeViewImmediate(player.binding.root)
             }
         } catch (e: IllegalArgumentException) {
             Log.w(TAG, "Failed to remove popup from window manager", e)
@@ -215,11 +216,13 @@ class PopupWindowController(private val player: Player) {
         try {
             val closeOverlayHasParent = closeOverlayBinding?.root?.parent != null
             if (closeOverlayHasParent) {
-                manager.removeView(closeOverlayBinding!!.root)
+                manager.removeViewImmediate(closeOverlayBinding!!.root)
             }
         } catch (e: IllegalArgumentException) {
             Log.w(TAG, "Failed to remove popup overlay from window manager", e)
         }
+        closeOverlayBinding = null
+        isPopupClosing = false
     }
 
     private fun animatePopupOverlayAndFinishService() {

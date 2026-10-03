@@ -119,12 +119,8 @@ class PlayerClickController(private val player: Player) :
         } else if (v.id == binding.sleepTimer.id) {
             onSleepTimerClicked()
         } else if (v.id == binding.fullScreenButton.id) {
-            player.setRecovery()
-            if (player.popupPlayerSelected()) {
-                // Clean up popup properly before switching to main player
-                player.service.stopService()
-            }
-            NavigationHelper.playOnMainPlayer(player.context, player.playQueue!!, true)
+            NavigationHelper.switchPlayerMode(player.context, player,
+                PlayerService.PlayerType.VIDEO, true)
             return
         } else if (v.id == binding.screenRotationButton.id) {
             player.changeFullscreen(!player.isFullscreen)

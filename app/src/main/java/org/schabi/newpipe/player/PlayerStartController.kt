@@ -20,6 +20,65 @@ import org.schabi.newpipe.util.SerializedCache
  */
 class PlayerStartController(private val player: Player) {
 
+    companion object {
+        private val nextModeRequest = java.util.concurrent.atomic.AtomicLong()
+    }
+
+    private var pendingMainModeRequest = 0L
+
+    fun cancelModeRequest() {
+        pendingMainModeRequest = 0L
+        player.sourceController.modeSwitchRecoveryItem = null
+    }
+
+    fun requestMainPlaybackMode(): Long {
+        pendingMainModeRequest = if (isModeSwitchReady()) nextModeRequest.incrementAndGet() else 0L
+        return pendingMainModeRequest
+    }
+
+    fun isMainPlaybackModeRequestCurrent(request: Long): Boolean =
+        request != 0L && request == pendingMainModeRequest && isModeSwitchReady()
+
+    fun isModeSwitchReady(): Boolean = !player.exoPlayerIsNull()
+        && player.playQueue?.let { !it.isDisposed && it.item != null } == true
+
+    fun switchPlaybackMode(target: PlayerService.PlayerType): Boolean {
+        pendingMainModeRequest = 0L
+        if (!isModeSwitchReady()) return false
+        if (target == PlayerService.PlayerType.POPUP
+            && !org.schabi.newpipe.util.PermissionHelper.isPopupEnabled(player.context)) {
+            org.schabi.newpipe.util.PermissionHelper.showPopupEnablementToast(player.context)
+            return false
+        }
+        if (player.popupPlayerSelected() && target != PlayerService.PlayerType.POPUP) {
+            player.removePopupFromView()
+        }
+        if (target != PlayerService.PlayerType.VIDEO) player.changeFullscreen(false)
+        player.setPlayerType(target)
+        player.sourceController.isMainPlayerDetailsBrowsing = false
+        player.sourceController.useVideoSource(target != PlayerService.PlayerType.AUDIO, true)
+        player.setupElementsVisibility()
+        player.setupElementsSize()
+        player.updateStreamRelatedViews()
+        if (player.audioPlayerSelected()) {
+            player.service.removeViewFromParent()
+        } else if (player.popupPlayerSelected()) {
+            player.binding.root.visibility = View.VISIBLE
+            player.initPopup()
+            player.initPopupCloseOverlay()
+        } else {
+            player.binding.root.visibility = View.VISIBLE
+            player.initVideoPlayer()
+            player.closeItemsList()
+        }
+        player.notifyQueueUpdateToListeners()
+        player.notifyMetadataUpdateToListeners()
+        player.notifyPlaybackUpdateToListeners()
+        org.schabi.newpipe.player.NotificationUtil.getInstance()
+            .createNotificationIfNeededAndUpdate(player, true)
+        return true
+    }
+
     fun handleIntent(intent: Intent) {
         val intentStartupTraceId = PlaybackStartupTrace.fromIntent(intent)
         if (intentStartupTraceId > 0) {
@@ -36,6 +95,7 @@ class PlayerStartController(private val player: Player) {
             && activeQueue != null
         ) {
             val itemToPlay = newQueue.getItem() ?: return
+            cancelModeRequest()
             player.saveStreamProgressState()
             activeQueue.insertNextAndSelect(itemToPlay)
             player.notifyQueueUpdateToListeners()
@@ -66,6 +126,7 @@ class PlayerStartController(private val player: Player) {
             return
         }
 
+        cancelModeRequest()
         player.sourceController.isMainPlayerDetailsBrowsing = false
 
         val parametersBuilder = player.trackSelector.buildUponParameters()

@@ -17,6 +17,8 @@ import org.schabi.newpipe.player.resolver.VideoPlaybackResolver.SourceType
  */
 class PlayerSourceController(private val player: Player) {
 
+    var modeSwitchRecoveryItem: org.schabi.newpipe.player.mediaitem.PlayerMediaItem? = null
+
     var isMainPlayerDetailsBrowsing = false
 
     /** Keep the active main queue playing as audio while another detail page is shown. */
@@ -32,61 +34,41 @@ class PlayerSourceController(private val player: Player) {
      * We don't want to interrupt playback and don't want to see notification so
      * next lines of code will enable audio-only playback only if needed
      */
-    fun useVideoSource(videoEnabled: Boolean) {
-        val playQueue = player.playQueue
-        if (playQueue == null || player.isAudioOnly == !videoEnabled || player.audioPlayerSelected()) {
-            return
-        }
+    @JvmOverloads
+    fun useVideoSource(videoEnabled: Boolean, modeSwitch: Boolean = false) {
+        val playQueue = player.playQueue ?: return
+        if (player.isAudioOnly == !videoEnabled
+            || (player.audioPlayerSelected() && videoEnabled)) return
 
-        player.setAudioOnly(!videoEnabled)
-        // When a user returns from background, controls could be hidden but SystemUI will be shown
-        // 100%. Hide it.
-        if (!player.isAudioOnly() && !player.isControlsVisible()) {
-            player.hideSystemUIIfNeeded()
-        }
-
-        // The current metadata may be null sometimes (for e.g. when using an unstable connection
-        // in livestreams) so we should be not able to execute the block below.
-        // Reload the play queue manager in this case, which is the behavior when we don't know the
-        // index of the video renderer or playQueueManagerReloadingNeeded returns true.
-        val info = player.currentStreamInfo.orElse(null) ?: run {
-            player.reloadPlayQueueManager()
-            player.setRecovery()
-            return
-        }
-
-        // In the case we don't know the source type, fallback to the one with video with audio or
-        // audio-only source.
-        val sourceType = player.sourceResolver.getStreamSourceType().orElse(
-            SourceType.VIDEO_WITH_AUDIO_OR_AUDIO_ONLY
-        )
-
-        // A SABR source already exposes both audio and video, so background / foreground video
-        // toggles only need to update Media3 track selection instead of rebuilding the source.
-        if (!isCurrentStreamSabr()
-            && playQueueManagerReloadingNeeded(sourceType, info, getVideoRendererIndex())
-        ) {
-            player.reloadPlayQueueManager()
-        } else {
-            val streamType = info.streamType
-            if (streamType == StreamType.AUDIO_STREAM
-                || streamType == StreamType.AUDIO_LIVE_STREAM
-            ) {
-                // Nothing to do more than setting the recovery position
-                player.setRecovery()
-                return
-            }
-
-            val parametersBuilder = player.trackSelector.buildUponParameters()
-
-            // Enable/disable the video track and the ability to select subtitles
-            parametersBuilder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !videoEnabled)
-            parametersBuilder.setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !videoEnabled)
-
-            player.trackSelector.setParameters(parametersBuilder)
-        }
-
+        val keepLiveEdge = modeSwitch && player.isLiveEdge
         player.setRecovery()
+        player.setAudioOnly(!videoEnabled)
+        if (!player.isAudioOnly && !player.isControlsVisible) player.hideSystemUIIfNeeded()
+
+        val info = if (player.currentItem == playQueue.item) {
+            player.currentStreamInfo.orElse(null)
+        } else null
+        val sourceType = player.sourceResolver.getStreamSourceType().orElse(
+            SourceType.VIDEO_WITH_AUDIO_OR_AUDIO_ONLY)
+        val sourceVideo = player.currentMetadata?.maybeQuality?.orElse(null)?.selectedVideoStream
+        val sabrVideoSource = sourceVideo?.deliveryMethod == DeliveryMethod.SABR
+        // An audio-origin SABR source lacks video quality and subtitle sources.
+        val needsVideoSource = videoEnabled && sourceVideo == null
+            && sourceType != SourceType.LIVE_STREAM && info != null
+            && (!info.videoStreams.isNullOrEmpty() || !info.videoOnlyStreams.isNullOrEmpty())
+        val reload = info == null || needsVideoSource || (!sabrVideoSource
+            && playQueueManagerReloadingNeeded(sourceType, info, getVideoRendererIndex()))
+        player.trackSelector.setParameters(player.trackSelector.buildUponParameters()
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !videoEnabled)
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !videoEnabled))
+        if (reload) {
+            if (modeSwitch && playQueue.index == player.simpleExoPlayer.currentMediaItemIndex
+                && (player.currentItem == null || player.currentItem == playQueue.item)) {
+                modeSwitchRecoveryItem = playQueue.item
+                if (keepLiveEdge) playQueue.unsetRecovery(playQueue.index)
+            }
+            player.reloadPlayQueueManager()
+        }
     }
 
     /**

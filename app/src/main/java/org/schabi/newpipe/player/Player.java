@@ -450,6 +450,7 @@ public final class Player {
     }
 
     public void destroy() {
+        startController.cancelModeRequest();
         if (DEBUG) {
             Log.d(TAG, "destroy() called");
         }
@@ -471,9 +472,26 @@ public final class Player {
 
     }
 
+    public long requestMainPlaybackMode() {
+        return startController.requestMainPlaybackMode();
+    }
+
+    public boolean isMainPlaybackModeRequestCurrent(final long request) {
+        return startController.isMainPlaybackModeRequestCurrent(request);
+    }
+
+    public boolean isModeSwitchReady() {
+        return startController.isModeSwitchReady();
+    }
+
+    public boolean switchPlaybackMode(@NonNull final PlayerType target) {
+        return startController.switchPlaybackMode(target);
+    }
+
     public void setRecovery() {
         if (playQueue == null || exoPlayerIsNull()
-                || playQueue.getIndex() != simpleExoPlayer.getCurrentMediaItemIndex()) {
+                || playQueue.getIndex() != simpleExoPlayer.getCurrentMediaItemIndex()
+                || (getCurrentItem() != null && !getCurrentItem().equals(playQueue.getItem()))) {
             // A queue selection can precede ExoPlayer's timeline update. Do not save the old
             // item's position on the newly selected entry.
             return;
@@ -483,10 +501,9 @@ public final class Player {
         final long windowPos = simpleExoPlayer.getCurrentPosition();
         final long duration = simpleExoPlayer.getDuration();
 
-        final long newPos =  Math.max(0, Math.min(windowPos, duration));
-        if(newPos > 0) {
-            setRecovery(queuePos, newPos);
-        }
+        final long newPos = Math.max(0, duration == C.TIME_UNSET
+                ? windowPos : Math.min(windowPos, duration));
+        setRecovery(queuePos, newPos);
     }
 
     private void setRecovery(final int queuePos, final long windowPos) {
@@ -573,6 +590,7 @@ public final class Player {
     }
 
     void onPlaybackShutdown() {
+        startController.cancelModeRequest();
         if (DEBUG) {
             Log.d(TAG, "onPlaybackShutdown() called");
         }
@@ -1227,7 +1245,8 @@ public final class Player {
     MediaSource sourceOf(final PlayerMediaItem item, final StreamInfo info) {
         final long recoveryPosition = playQueue == null
                 ? PlayQueue.RECOVERY_UNSET : playQueue.getRecoveryPosition(item);
-        final long initialPositionMs = shouldSeek()
+        final long initialPositionMs = (shouldSeek()
+                || item.equals(sourceController.getModeSwitchRecoveryItem()))
                 && recoveryPosition != PlayQueue.RECOVERY_UNSET
                 ? recoveryPosition : 0;
         return sourceResolver.resolve(playerType, isAudioOnly, info, initialPositionMs,
@@ -1383,8 +1402,7 @@ public final class Player {
                     useVideoSource(false);
                     break;
                 case MINIMIZE_ON_EXIT_MODE_POPUP:
-                    setRecovery();
-                    NavigationHelper.playOnPopupPlayer(context, playQueue, true);
+                    NavigationHelper.switchPlayerMode(context, this, PlayerType.POPUP);
                     break;
                 case MINIMIZE_ON_EXIT_MODE_NONE: default:
                     pause();

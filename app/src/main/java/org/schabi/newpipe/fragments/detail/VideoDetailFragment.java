@@ -23,6 +23,7 @@ import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
+import android.view.SurfaceHolder;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
@@ -140,6 +141,8 @@ public final class VideoDetailFragment
         OnKeyDownListener,
         SponsorBlockFragmentListener {
     public static final String KEY_SWITCHING_PLAYERS = "switching_players";
+    public static final String KEY_MODE_SWITCH_REQUEST = "mode_switch_request";
+    public static final String KEY_MODE_SWITCH_FULLSCREEN = "mode_switch_fullscreen";
 
     private static final float MAX_OVERLAY_ALPHA = 0.9f;
     private static final float MAX_PLAYER_HEIGHT = 0.7f;
@@ -221,6 +224,10 @@ public final class VideoDetailFragment
     @Nullable
     private PlayQueue pendingPlaybackQueue;
     private boolean pendingDirectFullscreen;
+    private long pendingMainModeRequest;
+    private boolean pendingMainModeFullscreen;
+    @Nullable private SurfaceHolder pendingModeSurfaceHolder;
+    @Nullable private SurfaceHolder.Callback pendingModeSurfaceCallback;
     int bottomSheetState = BottomSheetBehavior.STATE_EXPANDED;
     protected boolean autoPlayEnabled = true;
     SponsorBlockMode currentSponsorBlockMode = null;
@@ -265,6 +272,10 @@ public final class VideoDetailFragment
         player = connectedPlayer;
         playerService = connectedPlayerService;
         updateBottomSheetDraggableForFullscreen();
+        if (pendingMainModeRequest != 0) {
+            attachPendingMainPlayer();
+            return;
+        }
 
         // It will do nothing if the player is not in fullscreen mode
         hideSystemUiIfNeeded();
@@ -292,6 +303,8 @@ public final class VideoDetailFragment
 
     @Override
     public void onServiceDisconnected() {
+        pendingMainModeRequest = 0;
+        clearModeSurfaceCallback();
         playerService = null;
         player = null;
         if (binding != null) {
@@ -369,11 +382,13 @@ public final class VideoDetailFragment
         outState.putString("url", url);
         outState.putInt("bottomSheetState", sanitizeBottomSheetState(bottomSheetState));
         outState.putBoolean("autoPlayEnabled", autoPlayEnabled);
+        outState.putBoolean("pendingDirectFullscreen", pendingDirectFullscreen);
+        outState.putLong(KEY_MODE_SWITCH_REQUEST, pendingMainModeRequest);
+        outState.putBoolean(KEY_MODE_SWITCH_FULLSCREEN, pendingMainModeFullscreen);
         if (pendingPlaybackQueue != null) {
             outState.putString("pendingPlaybackQueue", SerializedCache.getInstance()
                     .put(pendingPlaybackQueue, PlayQueue.class));
         }
-        outState.putBoolean("pendingDirectFullscreen", pendingDirectFullscreen);
         outState.putString("currentSponsorBlockMode", currentSponsorBlockMode != null ? currentSponsorBlockMode.name() : null);
     }
 
@@ -386,13 +401,15 @@ public final class VideoDetailFragment
         bottomSheetState = sanitizeBottomSheetState(savedInstanceState.getInt(
                 "bottomSheetState", BottomSheetBehavior.STATE_EXPANDED));
         autoPlayEnabled = savedInstanceState.getBoolean("autoPlayEnabled", true);
+        pendingDirectFullscreen = savedInstanceState.getBoolean("pendingDirectFullscreen", false);
+        pendingMainModeRequest = savedInstanceState.getLong(KEY_MODE_SWITCH_REQUEST, 0);
+        pendingMainModeFullscreen = savedInstanceState.getBoolean(KEY_MODE_SWITCH_FULLSCREEN, false);
         final String pendingQueueKey = savedInstanceState.getString("pendingPlaybackQueue");
         pendingPlaybackQueue = pendingQueueKey == null ? null
                 : SerializedCache.getInstance().get(pendingQueueKey, PlayQueue.class);
         if (pendingPlaybackQueue != null) {
             playQueue = pendingPlaybackQueue;
         }
-        pendingDirectFullscreen = savedInstanceState.getBoolean("pendingDirectFullscreen", false);
         String modeStr = savedInstanceState.getString("currentSponsorBlockMode");
         currentSponsorBlockMode = modeStr != null ? SponsorBlockMode.valueOf(modeStr) : null;
     }
@@ -418,7 +435,8 @@ public final class VideoDetailFragment
         // which the configuration change caused by entering fullscreen cancels. The player
         // service keeps isFullscreen, so the fullscreen event is not re-emitted to this new
         // fragment and the restored collapsed offset would leave the player off-screen.
-        if (isPlayerAvailable() && player.isFullscreen() && binding != null) {
+        if (isPlayerAvailable() && player.isFullscreen() && binding != null
+                && mainPlayerRelationFor(serviceId, url) == Relation.ACTIVE_ITEM) {
             binding.appBarLayout.setExpanded(true, false);
         }
     }
@@ -497,6 +515,7 @@ public final class VideoDetailFragment
 
     @Override
     public void onDestroyView() {
+        clearModeSurfaceCallback();
         super.onDestroyView();
         binding = null;
     }
@@ -847,6 +866,7 @@ public final class VideoDetailFragment
         } else {
             playerHolder.startService(false, this);
         }
+        attachPendingMainPlayer();
     }
 
     private View.OnTouchListener getOnControlsTouchListener() {
@@ -1025,7 +1045,9 @@ public final class VideoDetailFragment
                                                         final boolean scrollToTop,
                                                         final long delay) {
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            if (activity == null) {
+            if (activity == null || binding == null || info.getServiceId() != serviceId
+                    || (!Objects.equals(info.getUrl(), url)
+                    && !Objects.equals(info.getOriginalUrl(), url))) {
                 return;
             }
             // Data can already be drawn, don't spend time twice
@@ -1417,6 +1439,100 @@ public final class VideoDetailFragment
     public void openVideoPlayer(final boolean directlyFullscreenIfApplicable) {
         prepareMainPlayerUi(directlyFullscreenIfApplicable);
         openMainPlayer();
+    }
+
+    /** Attaches the active service queue without creating a play/replacement intent. */
+    public void switchToMainPlayer(final long request, final boolean fullscreen) {
+        pendingMainModeRequest = request;
+        pendingMainModeFullscreen = fullscreen;
+        setAutoPlay(false);
+        playerHolder.setListener(this);
+        attachPendingMainPlayer();
+    }
+
+    private void attachPendingMainPlayer() {
+        if (pendingMainModeRequest == 0 || binding == null || getView() == null || player == null) {
+            return;
+        }
+        if (playerHolder.getPlayer() != player
+                || !player.isMainPlaybackModeRequestCurrent(pendingMainModeRequest)) {
+            pendingMainModeRequest = 0;
+            clearModeSurfaceCallback();
+            return;
+        }
+
+        showActiveModeItem();
+        NavigationHelper.expandMainPlayer(requireActivity());
+        prepareMainPlayerUi(pendingMainModeFullscreen);
+        if (player.getRootView().getParent() != binding.playerPlaceholder) {
+            player.removePopupFromView();
+            player.service.removeViewFromParent();
+            addVideoPlayerView();
+        }
+        player.getRootView().setVisibility(View.VISIBLE);
+        player.getSurfaceView().setVisibility(View.VISIBLE);
+        final SurfaceHolder holder = player.getSurfaceView().getHolder();
+        if (holder.getSurface().isValid()) {
+            finishPendingMainMode();
+        } else if (pendingModeSurfaceCallback == null) {
+            pendingModeSurfaceHolder = holder;
+            pendingModeSurfaceCallback = new SurfaceHolder.Callback() {
+                @Override
+                public void surfaceCreated(@NonNull final SurfaceHolder surfaceHolder) {
+                    finishPendingMainMode();
+                }
+
+                @Override
+                public void surfaceChanged(@NonNull final SurfaceHolder surfaceHolder,
+                                           final int format, final int width, final int height) {
+                }
+
+                @Override
+                public void surfaceDestroyed(@NonNull final SurfaceHolder surfaceHolder) {
+                }
+            };
+            holder.addCallback(pendingModeSurfaceCallback);
+        }
+    }
+
+    private void showActiveModeItem() {
+        final PlayQueue activeQueue = player.getPlayQueue();
+        final PlayerMediaItem activeItem = activeQueue.getItem();
+        if (activeItem == null) {
+            return;
+        }
+        pendingPlaybackQueue = null;
+        setAutoPlay(false);
+        if (serviceId != activeItem.getServiceId() || !Objects.equals(url, activeItem.getUrl())) {
+            selectAndLoadVideo(activeItem.getServiceId(), activeItem.getUrl(),
+                    activeItem.getTitle(), null);
+        }
+        playQueue = activeQueue;
+    }
+
+    private void finishPendingMainMode() {
+        clearModeSurfaceCallback();
+        if (binding == null || player == null || playerHolder.getPlayer() != player
+                || player.getRootView().getParent() != binding.playerPlaceholder
+                || !player.isMainPlaybackModeRequestCurrent(pendingMainModeRequest)) {
+            pendingMainModeRequest = 0;
+            return;
+        }
+        // Queue advancement while the destination was opening belongs to the same request.
+        showActiveModeItem();
+        pendingMainModeRequest = 0;
+        player.switchPlaybackMode(org.schabi.newpipe.player.PlayerService.PlayerType.VIDEO);
+        attachMainPlayerToDisplayedVideo();
+        prepareMainPlayerUi(pendingMainModeFullscreen);
+        scrollToTop();
+    }
+
+    private void clearModeSurfaceCallback() {
+        if (pendingModeSurfaceHolder != null && pendingModeSurfaceCallback != null) {
+            pendingModeSurfaceHolder.removeCallback(pendingModeSurfaceCallback);
+        }
+        pendingModeSurfaceHolder = null;
+        pendingModeSurfaceCallback = null;
     }
 
     private void prepareMainPlayerUi(final boolean directlyFullscreenIfApplicable) {
@@ -2478,6 +2594,8 @@ public final class VideoDetailFragment
     @Override
     public void onServiceStopped() {
         cancelPendingFullscreen();
+        pendingMainModeRequest = 0;
+        clearModeSurfaceCallback();
         if (binding != null) {
             setOverlayPlayPauseImage(false);
             if (currentInfo != null) {

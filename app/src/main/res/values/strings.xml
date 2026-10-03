@@ -1135,6 +1135,8 @@
 <string name="minimize_gesture_non_fullscreen_description">Outside fullscreen only</string>
 <string name="minimize_gesture_fullscreen_description">In and outside fullscreen (disables the fullscreen and playback speed swipe gestures)</string>
 <string name="delete_filter_confirm">Do you want to delete \"%s\" from the filter list?</string>
+<string name="unofficial_releases_title">Unofficial releases</string>
+<string name="unofficial_releases_summary">Download updates from the darvilp fork. Automatic updates are disabled for this build.</string>
     <string name="sponsor_block_time_unset">Not set · Edit</string>
     <string name="sponsor_block_use_position">Use current position</string>
     <string name="sponsor_block_jump_here">Jump here</string>

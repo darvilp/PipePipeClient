@@ -118,6 +118,9 @@ public class App extends MultiDexApplication {
 
         // Initialize settings first because others inits can use its values
         NewPipeSettings.initSettings(this);
+        if (BuildConfig.UNOFFICIAL_BUILD) {
+            NewVersionWorker.cancelOfficialUpdateWork(this);
+        }
         // Set this before any activity is created so AppCompat can apply the selected night mode
         // while attaching the activity's base context.
         ThemeHelper.setDayNightMode(this);

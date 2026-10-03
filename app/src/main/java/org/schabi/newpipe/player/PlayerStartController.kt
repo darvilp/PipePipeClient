@@ -103,11 +103,6 @@ class PlayerStartController(private val player: Player) {
             return
         }
 
-        val oldPlayerType = player.playerType
-        player.setPlayerType(PlayerHelper.retrievePlayerTypeFromIntent(intent))
-        // We need to setup audioOnly before super(), see "sourceOf"
-        player.setAudioOnly(player.audioPlayerSelected())
-
         val playQueue = player.playQueue
 
         // Resolve enqueue intents
@@ -128,6 +123,10 @@ class PlayerStartController(private val player: Player) {
 
         cancelModeRequest()
         player.sourceController.isMainPlayerDetailsBrowsing = false
+        val oldPlayerType = player.playerType
+        player.setPlayerType(PlayerHelper.retrievePlayerTypeFromIntent(intent))
+        // We need to setup audioOnly before super(), see "sourceOf"
+        player.setAudioOnly(player.audioPlayerSelected())
 
         val parametersBuilder = player.trackSelector.buildUponParameters()
         parametersBuilder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, player.audioPlayerSelected())

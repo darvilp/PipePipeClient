@@ -1010,8 +1010,10 @@ public final class Player {
                 }
             case DISCONTINUITY_REASON_SEEK_ADJUSTMENT:
             case DISCONTINUITY_REASON_INTERNAL:
-                // Player index may be invalid when playback is blocked
-                if (!getCurrentState().isBlocked() && newIndex != playQueue.getIndex()) {
+                // Source replacement may still report the previous ExoPlayer index after an
+                // explicit queue selection. Only playback navigation can adopt a new index.
+                if (!getCurrentState().isBlocked() && newIndex != playQueue.getIndex()
+                        && shouldAdoptPlayerIndex(discontinuityReason)) {
                     saveStreamProgressStateCompleted(); // current stream has ended
                     playQueue.setIndex(newIndex);
                 }
@@ -1019,6 +1021,12 @@ public final class Player {
             case DISCONTINUITY_REASON_SKIP:
                 break; // only makes Android Studio linter happy, as there are no ads
         }
+    }
+
+    static boolean shouldAdoptPlayerIndex(@DiscontinuityReason final int reason) {
+        return reason == DISCONTINUITY_REASON_AUTO_TRANSITION
+                || reason == DISCONTINUITY_REASON_SEEK
+                || reason == DISCONTINUITY_REASON_SEEK_ADJUSTMENT;
     }
 
     void onRenderedFirstFrame() {

@@ -38,6 +38,7 @@
 
     <string name="seek_duration_key">seek_duration</string>
     <string name="seek_duration_default_value">10000</string>
+    <string name="seek_on_media_button_events_key">seek_on_media_button_events</string>
     <string-array name="seek_duration_description">
         <!--   They are overridden in VideoAudioSettingsFragment.java if the translation
         (seconds) exist. Otherwise this array is picked-->
@@ -1774,11 +1775,9 @@
     <string name="export_data_to_newpipe_key">export_data_to_newpipe</string>
     <string name="youtube_player_client_key">youtube_player_client</string>
     <string-array name="youtube_player_client_entries">
-        <item>VisionOS</item>
         <item>MWEB (SABR)</item>
     </string-array>
     <string-array name="youtube_player_client_values">
-        <item>visionos</item>
         <item>mweb</item>
     </string-array>
     <string name="sabr_backoff_notification_channel_id">sabr_backoff</string>
@@ -1813,4 +1812,14 @@
         <item>@string/minimize_gesture_non_fullscreen_description</item>
         <item>@string/minimize_gesture_fullscreen_description</item>
     </string-array>
+
+    <!-- DeArrow -->
+    <string name="dearrow_home_page_key" translatable="false">dearrow_home_page</string>
+    <string name="dearrow_enable_key" translatable="false">dearrow_enable</string>
+    <string name="dearrow_replace_titles_key" translatable="false">dearrow_replace_titles</string>
+    <string name="dearrow_replace_thumbnails_key" translatable="false">dearrow_replace_thumbnails</string>
+    <string name="dearrow_random_frame_key" translatable="false">dearrow_random_frame</string>
+    <string name="dearrow_auto_format_key" translatable="false">dearrow_auto_format</string>
+    <string name="dearrow_clear_cache_key" translatable="false">dearrow_clear_cache</string>
+    <string name="dearrow_original_fallback_key" translatable="false">dearrow_original_fallback</string>
 </resources>

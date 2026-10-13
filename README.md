@@ -1,6 +1,8 @@
 # PipePipe All Features
 
-This release combines the eleven isolated v5.4 feature branches below. Version `5.4.0-unofficial.9` also fixes the queue-selection regression in `.8`: internal timeline changes and media-source removal cannot undo an explicit selection made by "Play now and keep queue." Automatic transitions and seeks still update the selection normally.
+This local candidate combines the eleven maintained features below with upstream v5.5.0-beta1. Version `5.5.0-beta1-unofficial.10` retains the `.9` queue-selection fix: internal timeline changes and media-source removal cannot undo an explicit selection made by "Play now and keep queue." Automatic transitions and seeks still update the selection normally.
+
+Each feature was migrated and built independently before integration. The local migrated branches use `migrate/v5.5/`; the links below identify the published v5.4 feature histories. Publication of this beta candidate is pending a device test drive and user approval.
 
 ## Included behavior changes
 

@@ -109,6 +109,8 @@ import org.schabi.newpipe.player.playqueue.PlayQueue;
 import org.schabi.newpipe.player.playqueue.SinglePlayQueue;
 import org.schabi.newpipe.sleep.SleepTimerService;
 import org.schabi.newpipe.util.*;
+import org.schabi.newpipe.util.dearrow.DeArrowBinder;
+import org.schabi.newpipe.util.dearrow.DeArrowRow;
 import org.schabi.newpipe.util.external_communication.KoreUtils;
 import org.schabi.newpipe.util.external_communication.ShareUtils;
 
@@ -201,12 +203,10 @@ public final class VideoDetailFragment
             showComments = videoTabs.contains(VIDEO_TAB_COMMENTS);
             showRelatedItems = videoTabs.contains(VIDEO_TAB_RELATED);
             showDescription = videoTabs.contains(VIDEO_TAB_DESCRIPTION);
-            showSponsorBlock = videoTabs.contains(VIDEO_TAB_SPONSORBLOCK)
-                    && sharedPreferences.getBoolean(getString(R.string.sponsor_block_enable_key), true);
+            showSponsorBlock = videoTabs.contains(VIDEO_TAB_SPONSORBLOCK);
             tabSettingsChanged = true;
         } else if (getString(R.string.sponsor_block_enable_key).equals(key)) {
-            showSponsorBlock = getVideoTabs(sharedPreferences).contains(VIDEO_TAB_SPONSORBLOCK)
-                    && sharedPreferences.getBoolean(key, true);
+            // Keep the tab visible while the feature is off, so it can be turned back on there.
             tabSettingsChanged = true;
         } else if (getString(R.string.pin_video_to_top_key).equals(key)) {
             updateStickyPlayerMode();
@@ -230,7 +230,6 @@ public final class VideoDetailFragment
     @Nullable private SurfaceHolder.Callback pendingModeSurfaceCallback;
     int bottomSheetState = BottomSheetBehavior.STATE_EXPANDED;
     protected boolean autoPlayEnabled = true;
-    SponsorBlockMode currentSponsorBlockMode = null;
 
     @Nullable
     private StreamInfo currentInfo = null;
@@ -345,8 +344,7 @@ public final class VideoDetailFragment
         showComments = videoTabs.contains(VIDEO_TAB_COMMENTS);
         showRelatedItems = videoTabs.contains(VIDEO_TAB_RELATED);
         showDescription = videoTabs.contains(VIDEO_TAB_DESCRIPTION);
-        showSponsorBlock = videoTabs.contains(VIDEO_TAB_SPONSORBLOCK)
-                && prefs.getBoolean(getString(R.string.sponsor_block_enable_key), true);
+        showSponsorBlock = videoTabs.contains(VIDEO_TAB_SPONSORBLOCK);
         selectedTabTag = prefs.getString(
                 getString(R.string.stream_info_selected_tab_key), COMMENTS_TAB_TAG);
         prefs.registerOnSharedPreferenceChangeListener(preferenceChangeListener);
@@ -389,7 +387,6 @@ public final class VideoDetailFragment
             outState.putString("pendingPlaybackQueue", SerializedCache.getInstance()
                     .put(pendingPlaybackQueue, PlayQueue.class));
         }
-        outState.putString("currentSponsorBlockMode", currentSponsorBlockMode != null ? currentSponsorBlockMode.name() : null);
     }
 
     @Override
@@ -410,8 +407,6 @@ public final class VideoDetailFragment
         if (pendingPlaybackQueue != null) {
             playQueue = pendingPlaybackQueue;
         }
-        String modeStr = savedInstanceState.getString("currentSponsorBlockMode");
-        currentSponsorBlockMode = modeStr != null ? SponsorBlockMode.valueOf(modeStr) : null;
     }
 
     @Override
@@ -557,12 +552,10 @@ public final class VideoDetailFragment
             showComments = videoTabs.contains(VIDEO_TAB_COMMENTS);
             showRelatedItems = videoTabs.contains(VIDEO_TAB_RELATED);
             showDescription = videoTabs.contains(VIDEO_TAB_DESCRIPTION);
-            showSponsorBlock = videoTabs.contains(VIDEO_TAB_SPONSORBLOCK)
-                    && sharedPreferences.getBoolean(getString(R.string.sponsor_block_enable_key), true);
+            showSponsorBlock = videoTabs.contains(VIDEO_TAB_SPONSORBLOCK);
             tabSettingsChanged = true;
         } else if (key.equals(getString(R.string.sponsor_block_enable_key))) {
-            showSponsorBlock = getVideoTabs(sharedPreferences).contains(VIDEO_TAB_SPONSORBLOCK)
-                    && sharedPreferences.getBoolean(key, true);
+            // Keep the tab visible while the feature is off, so it can be turned back on there.
             tabSettingsChanged = true;
         } else if (key.equals(getString(R.string.pin_video_to_top_key))) {
             updateStickyPlayerMode();
@@ -1050,8 +1043,12 @@ public final class VideoDetailFragment
                     && !Objects.equals(info.getOriginalUrl(), url))) {
                 return;
             }
-            // Data can already be drawn, don't spend time twice
-            if (info.getName().equals(binding.detailVideoTitleView.getText().toString())) {
+            // Data can already be drawn, don't spend time twice. The displayed title is not
+            // always info.getName(): DeArrow may have replaced it, and treating that as "not
+            // drawn yet" would redraw the whole page on every check.
+            final String shown = binding.detailVideoTitleView.getText().toString();
+            if (info.getName().equals(shown)
+                    || DeArrowBinder.isShowingTitle(activity, info, shown)) {
                 return;
             }
             prepareAndHandleInfo(info, scrollToTop);
@@ -1285,10 +1282,7 @@ public final class VideoDetailFragment
 
                 pageAdapter.updateItem(SPONSOR_BLOCK_TAB_TAG, sponsorBlockFragment);
 
-                if (currentSponsorBlockMode == null) {
-                    currentSponsorBlockMode = SponsorBlockMode.ENABLED;
-                }
-                sponsorBlockFragment.setSponsorBlockMode(currentSponsorBlockMode);
+                sponsorBlockFragment.setSponsorBlockMode(getSponsorBlockModeFromPreferences());
             }
         }
 
@@ -2265,6 +2259,13 @@ public final class VideoDetailFragment
                 .getDefaultResolutionIndex(activity, sortedVideoStreams);
         updateProgressInfo(info);
         initThumbnailViews(info);
+
+        // Swap in DeArrow's honest title and thumbnail, if the user opted in. This must come
+        // after initThumbnailViews, which loads the uploader's thumbnail: the original URL is
+        // deliberately not handed over, so the binder only ever paints a replacement over the
+        // top and never blanks this view.
+        DeArrowBinder.bind(DeArrowRow.fromDetail(info.getServiceId(), info.getUrl()),
+                binding.detailVideoTitleView, binding.detailThumbnailImageView);
         showMetaInfoInTextView(info.getMetaInfo(), binding.detailMetaInfoTextView,
                 binding.detailMetaInfoSeparator, disposables);
 
@@ -2534,19 +2535,11 @@ public final class VideoDetailFragment
 
     @Override
     public void onMetadataUpdate(final StreamInfo info, final PlayQueue queue) {
-        final Context context = requireContext();
-
-        final SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        final boolean isSponsorBlockEnabled =
-                prefs.getBoolean(getString(R.string.sponsor_block_enable_key), true);
-
-        if (player != null && isSponsorBlockEnabled) {
-            if (currentSponsorBlockMode == null) {
-                currentSponsorBlockMode = SponsorBlockMode.ENABLED;
-            }
-            player.setSponsorBlockMode(currentSponsorBlockMode);
+        if (player != null) {
+            final SponsorBlockMode mode = getSponsorBlockModeFromPreferences();
+            player.setSponsorBlockMode(mode);
             getSponsorBlockFragment().ifPresent(
-                    fragment -> fragment.setSponsorBlockMode(currentSponsorBlockMode));
+                    fragment -> fragment.setSponsorBlockMode(mode));
         }
         final StackItem item = findQueueInStack(queue);
         if (item != null) {
@@ -3168,17 +3161,30 @@ public final class VideoDetailFragment
         }
     }
 
+    /**
+     * The global SponsorBlock switch is the single source of truth. The in-player switch only
+     * writes it and the player's SponsorBlockController follows it, so no in-memory copy is kept
+     * here: a stale copy would otherwise be written back on the next metadata update (which a
+     * fullscreen transition triggers) and silently turn SponsorBlock off again.
+     */
+    @NonNull
+    private SponsorBlockMode getSponsorBlockModeFromPreferences() {
+        final SharedPreferences prefs =
+                PreferenceManager.getDefaultSharedPreferences(requireContext());
+        return prefs.getBoolean(getString(R.string.sponsor_block_enable_key), true)
+                ? SponsorBlockMode.ENABLED
+                : SponsorBlockMode.DISABLED;
+    }
+
     @Override
     public void onSkippingEnabledChanged(final boolean newValue) {
         if (player == null) {
             return;
         }
 
-        currentSponsorBlockMode = newValue
+        player.setSponsorBlockMode(newValue
                 ? SponsorBlockMode.ENABLED
-                : SponsorBlockMode.DISABLED;
-
-        player.setSponsorBlockMode(currentSponsorBlockMode);
+                : SponsorBlockMode.DISABLED);
     }
 
     @Override

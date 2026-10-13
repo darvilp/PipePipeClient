@@ -81,7 +81,8 @@ public class PlayerModeSwitchingTest {
             for (final String key : Arrays.asList(sponsor, tabs, selectedTab,
                     context.getString(R.string.always_start_from_beginning_key),
                     context.getString(R.string.start_main_player_fullscreen_key),
-                    context.getString(R.string.rotate_fullscreen_to_video_orientation_key))) {
+                    context.getString(R.string.rotate_fullscreen_to_video_orientation_key),
+                    context.getString(R.string.rotation_controls_fullscreen_key))) {
                 savedPreferences.put(key, preferences.getAll().get(key));
             }
             preferences.edit().putBoolean(sponsor, false)
@@ -376,7 +377,9 @@ public class PlayerModeSwitchingTest {
         final Player original = activity.player;
         instrumentation.runOnMainSync(() -> PreferenceManager.getDefaultSharedPreferences(main)
                 .edit().putBoolean(main.getString(
-                        R.string.rotate_fullscreen_to_video_orientation_key), true).commit());
+                        R.string.rotate_fullscreen_to_video_orientation_key), true)
+                .putBoolean(main.getString(R.string.rotation_controls_fullscreen_key), false)
+                .commit());
         selectMode(PlayerType.VIDEO);
         await(() -> original.videoPlayerSelected() && original.getParentActivity() != null,
                 "Main attached before scrolling");

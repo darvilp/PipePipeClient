@@ -1137,7 +1137,7 @@ Voulez-vous continuer?</string>
 <item quantity="other">%s nouveaux flux</item>
 </plurals>
 <plurals name="download_finished_notification">
-<item quantity="one">Téléchargement terminé</item>
+<item quantity="one">%s téléchargement terminé</item>
 <item quantity="other">%s téléchargements terminés</item>
 </plurals>
 <plurals name="deleted_downloads_toast">

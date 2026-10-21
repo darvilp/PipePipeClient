@@ -73,6 +73,15 @@ public class PlayerDiscontinuityRegressionTest {
     }
 
     @Test
+    public void chatPanelCleanupHandlesUninitializedViews() {
+        onMain(() -> {
+            assertNull(player.getBinding());
+            player.getBulletCommentsController().getChatPanel().release();
+            player.getBulletCommentsController().getChatPanel().release();
+        });
+    }
+
+    @Test
     public void internalTimelineChangeCannotUndoPlayingSelection() {
         assertSelectionSurvives(com.google.android.exoplayer2.Player.DISCONTINUITY_REASON_INTERNAL,
                 PlayerPlaybackState.PLAYING);

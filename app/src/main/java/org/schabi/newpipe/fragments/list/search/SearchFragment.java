@@ -592,6 +592,9 @@ public class SearchFragment extends BaseListFragment<SearchInfo, ListExtractor.I
 
     @Override
     public boolean onOptionsItemSelected(@NonNull final MenuItem item) {
+        if (item.getItemId() == R.id.action_multi_select) {
+            return super.onOptionsItemSelected(item);
+        }
         if (useOldSearchFilter && !channelSearchMode && searchFilterUi != null) {
             return searchFilterUi.onOptionsItemSelected(item);
         }
@@ -1500,12 +1503,15 @@ public class SearchFragment extends BaseListFragment<SearchInfo, ListExtractor.I
                 infoListAdapter.addInfoItemList(result.getRelatedItems());
             } else {
                 infoListAdapter.clearStreamItemList();
-                showEmptyState();
-                return;
+                if (result.getFilteredCount() == 0 && !hasMoreItems()) {
+                    showEmptyState();
+                    return;
+                }
             }
         }
 
         super.handleResult(result);
+        updateFilterStatus(result.getFilteredCount(), result.getRelatedItems().isEmpty(), true);
     }
 
     private void handleSearchSuggestion() {
@@ -1547,12 +1553,11 @@ public class SearchFragment extends BaseListFragment<SearchInfo, ListExtractor.I
 
         if (!result.getErrors().isEmpty()) {
             showSnackBarError(new ErrorInfo(result.getErrors(), UserAction.SEARCHED,
-                    "\"" + searchString + "\" → pageUrl: " + nextPage.getUrl() + ", "
-                            + "pageIds: " + nextPage.getIds() + ", "
-                            + "pageCookies: " + nextPage.getCookies(),
+                    "\"" + searchString + "\" → page: " + nextPage,
                     serviceId));
         }
         super.handleNextItems(result);
+        updateFilterStatus(result.getFilteredCount(), result.getItems().isEmpty(), false);
     }
 
     @Override
@@ -1588,5 +1593,10 @@ public class SearchFragment extends BaseListFragment<SearchInfo, ListExtractor.I
                         throwable -> showSnackBarError(new ErrorInfo(throwable,
                                 UserAction.DELETE_FROM_HISTORY, "Deleting item failed")));
         disposables.add(onDelete);
+    }
+
+    @Override
+    protected boolean supportsMultiSelect() {
+        return true;
     }
 }

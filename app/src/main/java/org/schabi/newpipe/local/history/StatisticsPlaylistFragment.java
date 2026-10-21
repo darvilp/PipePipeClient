@@ -19,6 +19,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.ActionBar;
+import androidx.appcompat.app.AlertDialog;
 import androidx.viewbinding.ViewBinding;
 
 import com.google.android.material.snackbar.Snackbar;
@@ -50,6 +51,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
@@ -130,9 +132,6 @@ public class StatisticsPlaylistFragment
                                     @NonNull final MenuInflater inflater) {
         super.onCreateOptionsMenu(menu, inflater);
         inflater.inflate(R.menu.menu_history, menu);
-        if (useAsFrontPage) {
-            menu.findItem(R.id.action_search_local).setIcon(R.drawable.ic_history_search);
-        }
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -152,6 +151,7 @@ public class StatisticsPlaylistFragment
         headerBinding = StatisticPlaylistControlBinding.inflate(activity.getLayoutInflater(),
                 itemsList, false);
         playlistControlBinding = headerBinding.playlistControl;
+        playlistControlBinding.getRoot().configure(getString(R.string.list_control_page_history));
 
         return headerBinding;
     }
@@ -163,6 +163,9 @@ public class StatisticsPlaylistFragment
         itemListAdapter.setSelectedListener(new OnClickGesture<LocalItem>() {
             @Override
             public void selected(final LocalItem selectedItem) {
+                if (toggleSelectionIfActive(selectedItem)) {
+                    return;
+                }
                 if (selectedItem instanceof StreamStatisticsEntry) {
                     final StreamEntity item =
                             ((StreamStatisticsEntry) selectedItem).getStreamEntity();
@@ -182,14 +185,21 @@ public class StatisticsPlaylistFragment
 
     @Override
     public boolean onOptionsItemSelected(final MenuItem item) {
-        if (item.getItemId() == R.id.action_history_clear) {
+        if (item.getItemId() == R.id.action_multi_select) {
+            selection.enter();
+        } else if (item.getItemId() == R.id.action_history_clear) {
             HistorySettingsFragment
                     .openDeleteWatchHistoryDialog(requireContext(), recordManager, disposables);
+        } else if (item.getItemId() == R.id.menu_item_sort) {
+            showSortDialog();
         } else if (item.getItemId() == R.id.action_search_local) {
             ActionBar actionBar = activity.getSupportActionBar();
             View customView = getLayoutInflater().inflate(R.layout.local_playlist_search_toolbar, null, false);
             assert actionBar != null;
-            actionBar.setCustomView(customView);
+            actionBar.setDisplayShowTitleEnabled(false);
+            actionBar.setCustomView(customView, new ActionBar.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
             actionBar.setDisplayShowCustomEnabled(true);
             editText = activity.findViewById(R.id.toolbar_search_edit_text_local);
             editText.requestFocus();
@@ -335,6 +345,9 @@ public class StatisticsPlaylistFragment
 
         itemListAdapter.clearStreamItemList();
 
+        // drop selected entries that no longer exist (e.g. deleted elsewhere)
+        selection.retainOnly(getSelectionKeys(new ArrayList<>(result)));
+
         if (result.isEmpty()) {
             showEmptyState();
             return;
@@ -364,7 +377,6 @@ public class StatisticsPlaylistFragment
             NavigationHelper.enqueueOnPlayer(activity, getPlayQueue(), PlayerType.AUDIO);
             return true;
         });
-        headerBinding.sortButton.setOnClickListener(view -> toggleSortMode());
 
         hideLoading();
     }
@@ -385,19 +397,28 @@ public class StatisticsPlaylistFragment
     // Utils
     //////////////////////////////////////////////////////////////////////////*/
 
-    private void toggleSortMode() {
-        if (sortMode == StatisticSortMode.LAST_PLAYED) {
-            sortMode = StatisticSortMode.MOST_PLAYED;
-            setTitle(getString(R.string.title_most_played));
-            headerBinding.sortButtonIcon.setImageResource(R.drawable.ic_history);
-            headerBinding.sortButtonText.setText(R.string.title_last_played);
-        } else {
-            sortMode = StatisticSortMode.LAST_PLAYED;
-            setTitle(getString(R.string.title_last_played));
-            headerBinding.sortButtonIcon.setImageResource(
-                R.drawable.ic_filter_list);
-            headerBinding.sortButtonText.setText(R.string.title_most_played);
+    private void showSortDialog() {
+        final StatisticSortMode[] modes = {StatisticSortMode.LAST_PLAYED,
+                StatisticSortMode.MOST_PLAYED};
+        final String[] items = {getString(R.string.title_last_played),
+                getString(R.string.title_most_played)};
+        new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                .setTitle(R.string.sort)
+                .setSingleChoiceItems(items, java.util.Arrays.asList(modes).indexOf(sortMode),
+                        (dialog, which) -> {
+                            setSortMode(modes[which]);
+                            dialog.dismiss();
+                        })
+                .show();
+    }
+
+    private void setSortMode(final StatisticSortMode mode) {
+        if (sortMode == mode) {
+            return;
         }
+        sortMode = mode;
+        setTitle(getString(mode == StatisticSortMode.LAST_PLAYED
+                ? R.string.title_last_played : R.string.title_most_played));
         startLoading(true);
     }
 
@@ -418,8 +439,7 @@ public class StatisticsPlaylistFragment
                     .addEntry(StreamDialogDefaultEntry.DELETE)
                     .setAction(
                             StreamDialogDefaultEntry.DELETE,
-                            (f, i) -> deleteEntry(
-                                    Math.max(itemListAdapter.getItemsList().indexOf(item), 0)))
+                            (f, i) -> deleteEntry(item))
                     .setAction(
                             StreamDialogDefaultEntry.START_HERE_ON_BACKGROUND,
                             (f, i) -> NavigationHelper.playOnBackgroundPlayer(
@@ -431,29 +451,25 @@ public class StatisticsPlaylistFragment
         }
     }
 
-    private void deleteEntry(final int index) {
-        final LocalItem infoItem = itemListAdapter.getItemsList().get(index);
-        if (infoItem instanceof StreamStatisticsEntry) {
-            final StreamStatisticsEntry entry = (StreamStatisticsEntry) infoItem;
-            final Disposable onDelete = recordManager
-                    .deleteStreamHistoryAndState(entry.getStreamId())
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(
-                            () -> {
-                                if (getView() != null) {
-                                    Snackbar.make(getView(), R.string.one_item_deleted,
-                                            Snackbar.LENGTH_SHORT).show();
-                                } else {
-                                    Toast.makeText(getContext(),
-                                            R.string.one_item_deleted,
-                                            Toast.LENGTH_SHORT).show();
-                                }
-                            },
-                            throwable -> showSnackBarError(new ErrorInfo(throwable,
-                                    UserAction.DELETE_FROM_HISTORY, "Deleting item")));
+    private void deleteEntry(final StreamStatisticsEntry entry) {
+        final Disposable onDelete = recordManager
+                .deleteStreamHistoryAndState(entry.getStreamId())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        () -> {
+                            if (getView() != null) {
+                                Snackbar.make(getView(), R.string.one_item_deleted,
+                                        Snackbar.LENGTH_SHORT).show();
+                            } else {
+                                Toast.makeText(getContext(),
+                                        R.string.one_item_deleted,
+                                        Toast.LENGTH_SHORT).show();
+                            }
+                        },
+                        throwable -> showSnackBarError(new ErrorInfo(throwable,
+                                UserAction.DELETE_FROM_HISTORY, "Deleting item")));
 
-            disposables.add(onDelete);
-        }
+        disposables.add(onDelete);
     }
 
     private PlayQueue getPlayQueue() {
@@ -478,6 +494,9 @@ public class StatisticsPlaylistFragment
 
     @Override
     public boolean onBackPressed() {
+        if (exitSelectionOnBack()) {
+            return true;
+        }
         if(Objects.requireNonNull(activity.getSupportActionBar()).getCustomView() != null){
             destroyCustomViewInActionBar();
             return true;
@@ -489,12 +508,80 @@ public class StatisticsPlaylistFragment
         assert actionBar != null;
         actionBar.setCustomView(null);
         actionBar.setDisplayShowCustomEnabled(false);
+        actionBar.setDisplayShowTitleEnabled(true);
 
         activity.invalidateOptionsMenu();
         
         if(itemListAdapter != null) {
             itemListAdapter.clearFilter();
         }
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+    // Multi-selection
+    //////////////////////////////////////////////////////////////////////////*/
+
+    @Override
+    protected int getSelectionMenu() {
+        return R.menu.menu_history_selection;
+    }
+
+    @Nullable
+    @Override
+    protected Long getSelectionKey(@NonNull final LocalItem item) {
+        return item instanceof StreamStatisticsEntry
+                ? ((StreamStatisticsEntry) item).getStreamId() : null;
+    }
+
+    @Nullable
+    @Override
+    protected StreamEntity getSelectionStream(@NonNull final LocalItem item) {
+        return item instanceof StreamStatisticsEntry
+                ? ((StreamStatisticsEntry) item).getStreamEntity() : null;
+    }
+
+    @Override
+    protected boolean onSelectionAction(@NonNull final MenuItem item) {
+        if (item.getItemId() == R.id.action_selection_delete) {
+            confirmDeleteSelected();
+            return true;
+        }
+        return false;
+    }
+
+    private void confirmDeleteSelected() {
+        final int count = selection.getSelectedCount();
+        if (count == 0) {
+            return;
+        }
+        new AlertDialog.Builder(requireContext())
+                .setMessage(getResources().getString(R.string.delete_selected_history_confirm, count))
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.delete, (d, w) -> deleteSelected())
+                .show();
+    }
+
+    private void deleteSelected() {
+        final Set<Long> ids = selection.getSelectedKeys();
+        if (ids.isEmpty()) {
+            return;
+        }
+        final int count = ids.size();
+        disposables.add(recordManager.deleteStreamHistoryAndState(ids)
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        () -> {
+                            selection.exit();
+                            final String message = getResources()
+                                    .getString(R.string.items_deleted, count);
+                            if (getView() != null) {
+                                Snackbar.make(getView(), message, Snackbar.LENGTH_SHORT).show();
+                            } else {
+                                Toast.makeText(getContext(), message, Toast.LENGTH_SHORT).show();
+                            }
+                        },
+                        throwable -> showSnackBarError(new ErrorInfo(throwable,
+                                UserAction.DELETE_FROM_HISTORY, "Deleting selected items"))));
     }
 
     private enum StatisticSortMode {

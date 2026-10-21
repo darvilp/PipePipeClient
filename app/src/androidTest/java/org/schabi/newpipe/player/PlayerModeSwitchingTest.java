@@ -423,7 +423,7 @@ public class PlayerModeSwitchingTest {
                     + visible + ", windowHeight=" + windowHeight + ", appBarTop="
                     + host.findViewById(R.id.app_bar_layout).getTop(),
                     videoVisible && visible.height() >= windowHeight * 0.9);
-            assertSame(host.findViewById(R.id.player_placeholder),
+            assertSame(host.findViewById(R.id.fullscreen_player_container),
                     original.getRootView().getParent());
             assertSame(engine, original.simpleExoPlayer);
             assertSame(queue, original.getPlayQueue());

@@ -20,6 +20,9 @@ import org.schabi.newpipe.util.PicassoHelper;
 import org.schabi.newpipe.util.ServiceHelper;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 public class AdvancedSettingsFragment extends BasePreferenceFragment implements SharedPreferences.OnSharedPreferenceChangeListener {
 
@@ -143,9 +146,26 @@ public class AdvancedSettingsFragment extends BasePreferenceFragment implements 
         if (preference == null) {
             return;
         }
+        final boolean loggedIn = !TextUtils.isEmpty(defaultPreferences.getString(
+                getString(R.string.youtube_cookies_key), null));
+        final String[] entries = getResources().getStringArray(
+                R.array.youtube_player_client_entries);
+        final String[] values = getResources().getStringArray(
+                R.array.youtube_player_client_values);
+        // Logged in: MWEB only. Logged out: VisionOS, TV (Samsung), MWEB.
+        final String[] shownValues = loggedIn
+                ? new String[]{"mweb"}
+                : new String[]{"visionos", "tv_samsung", "mweb"};
+        final List<CharSequence> shownEntries = new ArrayList<>();
+        for (final String value : shownValues) {
+            shownEntries.add(entries[Arrays.asList(values).indexOf(value)]);
+        }
+        preference.setEntries(shownEntries.toArray(new CharSequence[0]));
+        preference.setEntryValues(shownValues);
         App.reconcileYoutubePlayerClient(requireContext());
         preference.setValue(defaultPreferences.getString(
-                getString(R.string.youtube_player_client_key), "mweb"));
+                getString(R.string.youtube_player_client_key),
+                loggedIn ? "mweb" : "visionos"));
     }
 
     @Override

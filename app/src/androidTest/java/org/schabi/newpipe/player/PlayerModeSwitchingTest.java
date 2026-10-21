@@ -436,6 +436,14 @@ public class PlayerModeSwitchingTest {
         final com.google.android.material.bottomsheet.BottomSheetBehavior<android.view.View> sheet =
                 com.google.android.material.bottomsheet.BottomSheetBehavior.from(
                         host.findViewById(R.id.fragment_player_holder));
+        // First-layout restoration can otherwise overwrite this explicit collapse.
+        await(() -> ActivityLifecycleMonitorRegistry.getInstance().getLifecycleStageOf(host)
+                == Stage.RESUMED
+                && host.findViewById(R.id.fragment_player_holder).isLaidOut()
+                && host.findViewById(R.id.detail_thumbnail_image_view).getHeight() > 0
+                && sheet.getState()
+                != com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_SETTLING,
+                "Main detail layout restored before collapse");
         instrumentation.runOnMainSync(() -> sheet.setState(
                 com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED));
         await(() -> sheet.getState()

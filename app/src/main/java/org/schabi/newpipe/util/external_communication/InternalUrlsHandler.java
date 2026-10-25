@@ -6,6 +6,7 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
+import androidx.core.content.ContextCompat;
 
 import org.schabi.newpipe.MainActivity;
 import org.schabi.newpipe.R;
@@ -21,6 +22,7 @@ import org.schabi.newpipe.player.playqueue.SinglePlayQueue;
 import org.schabi.newpipe.player.Player;
 import org.schabi.newpipe.player.helper.PlayerHolder;
 import org.schabi.newpipe.util.ExtractorHelper;
+import org.schabi.newpipe.util.DeviceUtils;
 import org.schabi.newpipe.util.NavigationHelper;
 
 import java.util.regex.Matcher;
@@ -181,17 +183,6 @@ public final class InternalUrlsHandler {
             return false;
         }
 
-        final Player player = PlayerHolder.getInstance().getPlayer();
-        final PlayQueue activeQueue = player == null ? null : player.getPlayQueue();
-        if (activeQueue != null && !activeQueue.isDisposed() && activeQueue.getItem() != null
-                && activeQueue.getItem().getServiceId() == service.getServiceId()
-                && cleanUrl.equals(activeQueue.getItem().getUrl())) {
-            final Intent seek = new Intent(ACTION_SEEK_TO);
-            seek.putExtra("Timestamp", seconds);
-            context.sendBroadcast(seek);
-            return true;
-        }
-
         final Single<StreamInfo> single
                 = ExtractorHelper.getStreamInfo(service.getServiceId(), cleanUrl, false);
         disposables.add(single.subscribeOn(Schedulers.io())
@@ -228,6 +219,17 @@ public final class InternalUrlsHandler {
             return false;
         }
 
+        final Player player = PlayerHolder.getInstance().getPlayer();
+        final PlayQueue activeQueue = player == null ? null : player.getPlayQueue();
+        if (activeQueue != null && !activeQueue.isDisposed() && activeQueue.getItem() != null
+                && activeQueue.getItem().getServiceId() == service.getServiceId()
+                && cleanUrl.equals(activeQueue.getItem().getUrl())) {
+            final Intent seek = new Intent(ACTION_SEEK_TO);
+            seek.putExtra("Timestamp", seconds);
+            context.sendBroadcast(seek);
+            return true;
+        }
+
         final Single<StreamInfo> single
                 = ExtractorHelper.getStreamInfo(service.getServiceId(), cleanUrl, false);
         disposables.add(single.subscribeOn(Schedulers.io())
@@ -235,6 +237,12 @@ public final class InternalUrlsHandler {
                 .subscribe(info -> {
                     final PlayQueue playQueue
                             = new SinglePlayQueue(info, seconds * 1000L);
+                    if (player != null && player.videoPlayerSelected()) {
+                        ContextCompat.startForegroundService(context,
+                                NavigationHelper.getPlayerIntent(context,
+                                        DeviceUtils.getPlayerServiceClass(), playQueue,
+                                        false, true));
+                    }
                     NavigationHelper.playOnMainPlayer(context, playQueue, false);
                 }, throwable -> {
                     if (DEBUG) {

@@ -60,6 +60,9 @@ final class GatedMediaServer implements AutoCloseable {
             final BufferedReader reader = new BufferedReader(new InputStreamReader(
                     connection.getInputStream(), StandardCharsets.US_ASCII));
             final String requestLine = reader.readLine();
+            if (requestLine == null) {
+                return;
+            }
             final boolean playlist = live && requestLine.contains("/fixture.m3u8");
             final byte[] content = playlist ? ("#EXTM3U\n#EXT-X-VERSION:3\n"
                     + "#EXT-X-TARGETDURATION:30\n#EXT-X-MEDIA-SEQUENCE:0\n"

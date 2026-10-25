@@ -186,6 +186,9 @@ public class PlayerBrowsingPlaybackTest {
         final MediaSessionCompat.Token token = player.getMediaSessionManager().getSessionToken();
         final Object videoManager = sourceManager();
         instrumentation.runOnMainSync(() -> {
+            assertTrue(PreferenceManager.getDefaultSharedPreferences(main).edit()
+                    .putString(main.getString(R.string.autoplay_key),
+                            main.getString(R.string.autoplay_never_key)).commit());
             final VideoStream selected = player.getMenuController().getSelectedVideoStream();
             assertNotNull(selected);
             assertFalse(selected.isVideoOnly());
@@ -343,7 +346,22 @@ public class PlayerBrowsingPlaybackTest {
             }
             SystemClock.sleep(50);
         } while (SystemClock.elapsedRealtime() < deadline);
-        throw new AssertionError(message);
+        final String[] state = new String[1];
+        instrumentation.runOnMainSync(() -> {
+            final TextView title = main == null ? null
+                    : main.findViewById(R.id.detail_video_title_view);
+            final PlayQueue queue = player == null ? null : player.getPlayQueue();
+            final ExoPlayer engine = player == null ? null : player.simpleExoPlayer;
+            state[0] = "title=" + (title == null ? null : title.getText())
+                    + ", queueUrl=" + (queue == null || queue.getItem() == null
+                            ? null : queue.getItem().getUrl())
+                    + ", audioOnly=" + (player == null ? null : player.isAudioOnly())
+                    + ", engineState=" + (engine == null ? null : engine.getPlaybackState())
+                    + ", position=" + (engine == null ? null : engine.getCurrentPosition())
+                    + ", playWhenReady=" + (engine == null ? null : engine.getPlayWhenReady())
+                    + ", manager=" + (player == null ? null : sourceManager());
+        });
+        throw new AssertionError(message + " [" + state[0] + "]");
     }
 
     @After

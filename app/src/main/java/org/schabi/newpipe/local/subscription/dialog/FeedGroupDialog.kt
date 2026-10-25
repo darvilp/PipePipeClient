@@ -452,9 +452,6 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
 
             val isSelected = if (subscriptionId in selectedIds) {
                 selectedIds.remove(subscriptionId)
-                if (currentScreen !is ContentRuleSubscriptionsScreen) {
-                    contentSelectionOverrides.remove(subscriptionId)
-                }
                 false
             } else {
                 selectedIds.add(subscriptionId)

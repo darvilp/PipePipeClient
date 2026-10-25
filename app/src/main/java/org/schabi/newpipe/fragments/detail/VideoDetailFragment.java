@@ -1692,8 +1692,7 @@ public final class VideoDetailFragment
         }
 
         if (playerIsNotStopped()
-                && (pendingPlaybackQueue == null
-                || pendingPlaybackQueue.equals(player.getPlayQueue()))
+                && pendingPlaybackQueue == null
                 && mainPlayerRelationFor(currentInfo.getServiceId(), currentInfo.getOriginalUrl())
                 == Relation.ACTIVE_ITEM) {
             attachMainPlayerToDisplayedVideo();

@@ -1,9 +1,12 @@
 package org.schabi.newpipe.local.subscription.dialog
 
 import android.content.Context
+import android.os.Bundle
+import android.os.Parcel
 import android.os.SystemClock
 import android.view.View
 import android.widget.CheckBox
+import androidx.fragment.app.Fragment
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -33,6 +36,76 @@ import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(AndroidJUnit4::class)
 class FeedGroupDraftContentRulesTest {
+    @Test
+    fun serializedDraftRestoresContentRulesScreen() {
+        assertSerializedDraftRestoresScreen(
+            FeedGroupDialog.ScreenState.ContentRulesScreen,
+            R.id.default_content_shorts
+        )
+    }
+
+    @Test
+    fun serializedDraftRestoresContentRuleSubscriptionsScreen() {
+        assertSerializedDraftRestoresScreen(
+            FeedGroupDialog.ScreenState.ContentRuleSubscriptionsScreen,
+            R.id.subscriptions_header_title
+        )
+    }
+
+    private fun assertSerializedDraftRestoresScreen(
+        screen: FeedGroupDialog.ScreenState,
+        visibleControlId: Int
+    ) {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val manager = activity.supportFragmentManager
+                val dialog = FeedGroupDialog.newInstance().apply {
+                    selectedSubscriptions = hashSetOf(42L)
+                    wasSubscriptionSelectionChanged = true
+                    contentSelectionOverrides = hashMapOf(42L to FeedContentSelection.LIVE.mask)
+                    wasContentRulesChanged = true
+                    editingContentSelectionMask = FeedContentSelection.LIVE.mask
+                    editingRuleOriginalSubscriptions = hashSetOf(42L)
+                    editingRuleSelectedSubscriptions = hashSetOf(42L)
+                    currentScreen = screen
+                }
+                dialog.showNow(manager, "serialized-content-draft")
+                val screenName = screen.javaClass.simpleName
+                assertTrue("Original $screenName controls must be visible",
+                    dialog.requireView().findViewById<View>(visibleControlId).isShown)
+                val savedBundle = Bundle().apply {
+                    putParcelable("dialogState", manager.saveFragmentInstanceState(dialog))
+                }
+                val bytes = Parcel.obtain().let { parcel ->
+                    try {
+                        parcel.writeBundle(savedBundle)
+                        parcel.marshall()
+                    } finally {
+                        parcel.recycle()
+                    }
+                }
+                val restoredState = Parcel.obtain().let { parcel ->
+                    try {
+                        parcel.unmarshall(bytes, 0, bytes.size)
+                        parcel.setDataPosition(0)
+                        parcel.readBundle(FeedGroupDialog::class.java.classLoader)!!
+                            .getParcelable<Fragment.SavedState>("dialogState")!!
+                    } finally {
+                        parcel.recycle()
+                    }
+                }
+                dialog.dismissNow()
+                val restored = FeedGroupDialog.newInstance().apply {
+                    setInitialSavedState(restoredState)
+                }
+                restored.showNow(manager, "restored-content-draft")
+                assertTrue("Serialized $screenName must keep its content controls visible",
+                    restored.requireView().findViewById<View>(visibleControlId).isShown)
+                restored.dismissNow()
+            }
+        }
+    }
+
     @Test
     fun defaultEditBeforeInitialMembershipDeliveryPreservesPersistedException() {
         val database = Room.inMemoryDatabaseBuilder(

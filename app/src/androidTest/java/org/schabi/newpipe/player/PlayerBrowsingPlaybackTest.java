@@ -65,6 +65,7 @@ import org.schabi.newpipe.util.CommentTextOnTouchListener;
 import org.schabi.newpipe.util.InfoCache;
 import org.schabi.newpipe.util.NavigationHelper;
 import org.schabi.newpipe.util.external_communication.InternalUrlsHandler;
+import org.schabi.newpipe.util.external_communication.TextLinkifier;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -190,6 +191,34 @@ public class PlayerBrowsingPlaybackTest {
             spans.getSpans(0, spans.length(), ClickableSpan.class)[0].onClick(text);
         });
         assertTimestampTargetsBrowsedVideo("Description timestamps must target displayed video");
+    }
+
+    @Test
+    public void currentVideoDescriptionTimestampKeepsExistingQueue() throws Exception {
+        start(false);
+        final PlayQueue queue = player.getPlayQueue();
+        final TextView[] text = new TextView[1];
+        instrumentation.runOnMainSync(() -> {
+            queue.append(new SinglePlayQueue(fixtureMetadata.get(OTHER_URL)).getItem());
+            text[0] = new TextView(main);
+            TextLinkifier.createLinksFromPlainText(text[0], "0:12 jump",
+                    fixtureMetadata.get(CURRENT_URL), disposables);
+        });
+        await(() -> text[0].getText() instanceof Spanned && ((Spanned) text[0].getText())
+                .getSpans(0, text[0].length(), ClickableSpan.class).length > 0,
+                "Current-video timestamp must become clickable");
+        instrumentation.runOnMainSync(() -> {
+            final Spanned spans = (Spanned) text[0].getText();
+            spans.getSpans(0, spans.length(), ClickableSpan.class)[0].onClick(text[0]);
+        });
+        await(() -> Math.abs(player.getCurrentPosition() - 12000) < 1000,
+                "Current-video timestamp must seek without replacing its queue");
+        instrumentation.runOnMainSync(() -> {
+            player.pause();
+            assertSame(queue, player.getPlayQueue());
+            assertEquals(2, queue.size());
+            assertEquals(CURRENT_URL, queue.getItem().getUrl());
+        });
     }
 
     @Test

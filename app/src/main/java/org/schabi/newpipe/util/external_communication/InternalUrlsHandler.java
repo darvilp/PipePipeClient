@@ -18,6 +18,8 @@ import org.schabi.newpipe.extractor.linkhandler.LinkHandlerFactory;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.schabi.newpipe.player.playqueue.PlayQueue;
 import org.schabi.newpipe.player.playqueue.SinglePlayQueue;
+import org.schabi.newpipe.player.Player;
+import org.schabi.newpipe.player.helper.PlayerHolder;
 import org.schabi.newpipe.util.ExtractorHelper;
 import org.schabi.newpipe.util.NavigationHelper;
 
@@ -177,6 +179,17 @@ public final class InternalUrlsHandler {
             cleanUrl = factory.getUrl(factory.getId(url));
         } catch (final ParsingException e) {
             return false;
+        }
+
+        final Player player = PlayerHolder.getInstance().getPlayer();
+        final PlayQueue activeQueue = player == null ? null : player.getPlayQueue();
+        if (activeQueue != null && !activeQueue.isDisposed() && activeQueue.getItem() != null
+                && activeQueue.getItem().getServiceId() == service.getServiceId()
+                && cleanUrl.equals(activeQueue.getItem().getUrl())) {
+            final Intent seek = new Intent(ACTION_SEEK_TO);
+            seek.putExtra("Timestamp", seconds);
+            context.sendBroadcast(seek);
+            return true;
         }
 
         final Single<StreamInfo> single

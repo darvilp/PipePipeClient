@@ -165,7 +165,8 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
 
         onSettingsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             when (key) {
-                getString(R.string.list_view_mode_key) -> {
+                getString(R.string.list_view_mode_key),
+                getString(R.string.card_mode_enabled_key) -> {
                     updateListViewModeOnResume = true
                 }
                 getString(R.string.grid_layout_enabled_key) -> {
@@ -259,6 +260,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
 
         if (updateListViewModeOnResume) {
             updateListViewModeOnResume = false
+            displayedContent = null
 
             setupListViewMode()
             if (viewModel.stateLiveData.value != null) {

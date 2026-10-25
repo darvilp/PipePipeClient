@@ -55,6 +55,7 @@ import org.schabi.newpipe.fragments.detail.VideoDetailFragment;
 import org.schabi.newpipe.info_list.InfoItemBuilder;
 import org.schabi.newpipe.info_list.holder.CommentsMiniInfoItemHolder;
 import org.schabi.newpipe.player.PlayerService.PlayerType;
+import org.schabi.newpipe.player.event.PlayerEventListener;
 import org.schabi.newpipe.player.helper.PlayerHolder;
 import org.schabi.newpipe.player.mediaitem.ExoMediaItems;
 import org.schabi.newpipe.player.mediaitem.PlayerMediaItem;
@@ -98,6 +99,8 @@ public class PlayerBrowsingPlaybackTest {
     private Player player;
     private boolean startedPlayback;
     private int savedPopupAppOp = -1;
+    private PlayerEventListener timestampListener;
+    private long firstTimestampPreparedPosition = com.google.android.exoplayer2.C.TIME_UNSET;
 
     @Before
     public void isolatePlaybackPreferences() {
@@ -155,6 +158,60 @@ public class PlayerBrowsingPlaybackTest {
     }
 
     @Test
+    public void newTimestampQueueKeepsRecoveryUntilMetadataArrives() throws Exception {
+        start(false);
+        final SingleSubject<StreamInfo> metadataGate = SingleSubject.create();
+        final ExoPlayer[] targetEngine = new ExoPlayer[1];
+        final boolean[] timestampSeek = {false};
+        instrumentation.runOnMainSync(() -> {
+            final PlayQueue request = new SinglePlayQueue(fixtureMetadata.get(OTHER_URL), 12000);
+            assertEquals(12000, request.getRecoveryPosition(request.getItem()));
+            player.handleIntent(NavigationHelper.getPlayerIntent(main,
+                    DeviceUtils.getPlayerServiceClass(), request, false, true));
+            final PlayQueue selected = player.getPlayQueue();
+            assertEquals(OTHER_URL, selected.getItem().getUrl());
+            // Queue initialization is posted to this thread, so A's metadata still owns playback.
+            assertEquals(CURRENT_URL, player.getCurrentMetadata().getUrl());
+            assertEquals("Starting a timestamp queue must retain its requested recovery",
+                    12000, selected.getRecoveryPosition(selected.getItem()));
+            targetEngine[0] = player.simpleExoPlayer;
+            targetEngine[0].addListener(new com.google.android.exoplayer2.Player.Listener() {
+                @Override
+                public void onPositionDiscontinuity(
+                        final com.google.android.exoplayer2.Player.PositionInfo previous,
+                        final com.google.android.exoplayer2.Player.PositionInfo next,
+                        final int reason) {
+                    if (reason == com.google.android.exoplayer2.Player.DISCONTINUITY_REASON_SEEK
+                            && next.positionMs == 12000) {
+                        timestampSeek[0] = true;
+                    }
+                }
+            });
+            try {
+                final Field resolver = sourceManager().getClass()
+                        .getDeclaredField("streamInfoResolver");
+                resolver.setAccessible(true);
+                resolver.set(sourceManager(), (StreamInfoResolver) item -> metadataGate);
+            } catch (final ReflectiveOperationException error) {
+                throw new AssertionError(error);
+            }
+        });
+        await(metadataGate::hasObservers, "Timestamp target requests gated metadata");
+        instrumentation.runOnMainSync(() -> {
+            final PlayQueue queue = player.getPlayQueue();
+            assertEquals(12000, queue.getRecoveryPosition(queue.getItem()));
+            metadataGate.onSuccess(fixtureMetadata.get(OTHER_URL));
+        });
+        await(() -> timestampSeek[0]
+                && targetEngine[0].getPlaybackState() == ExoPlayer.STATE_READY,
+                "The requested twelve-second seek must be consumed before playback");
+        instrumentation.runOnMainSync(() -> {
+            player.pause();
+            assertEquals(12000, player.getCurrentPosition(), 1000);
+        });
+    }
+
+    @Test
     public void descriptionTimestampTargetsBrowsedVideo() throws Exception {
         checkDescriptionTimestampTargetsBrowsedVideo(PlayerType.VIDEO);
     }
@@ -172,6 +229,7 @@ public class PlayerBrowsingPlaybackTest {
                 && ((Spanned) descriptionTimestampView().getText()).getSpans(0,
                         descriptionTimestampView().length(), ClickableSpan.class).length > 0,
                 "Browsed description must contain its real timestamp link");
+        observeTimestampTargetPreparation();
         instrumentation.runOnMainSync(() -> {
             final TextView text = descriptionTimestampView();
             final Spanned spans = (Spanned) text.getText();
@@ -248,6 +306,7 @@ public class PlayerBrowsingPlaybackTest {
             text[0] = holder.itemView.findViewById(R.id.itemCommentContentView);
         });
         await(() -> text[0].getUrls().length > 0, "Comment holder must generate its timestamp link");
+        observeTimestampTargetPreparation();
         instrumentation.runOnMainSync(() -> {
             final TextView view = text[0];
             view.measure(View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.EXACTLY),
@@ -332,13 +391,57 @@ public class PlayerBrowsingPlaybackTest {
     }
 
     private void assertTimestampTargetsBrowsedVideo(final String message) {
-        await(() -> player.simpleExoPlayer.getPlaybackState() == ExoPlayer.STATE_READY
-                && Math.abs(player.getCurrentPosition() - 12000) < 1000,
-                "Timestamp click must prepare playback near twelve seconds");
+        await(() -> firstTimestampPreparedPosition != com.google.android.exoplayer2.C.TIME_UNSET,
+                "Timestamp target must reach its first prepared state");
         instrumentation.runOnMainSync(() -> {
             player.pause();
             assertEquals(message, OTHER_URL, player.getPlayQueue().getItem().getUrl());
+            assertEquals("Timestamp must apply before playback advances naturally",
+                    12000, firstTimestampPreparedPosition, 1000);
             assertEquals(12000, player.getCurrentPosition(), 1000);
+        });
+    }
+
+    private void observeTimestampTargetPreparation() {
+        final ExoPlayer[] observed = {null};
+        instrumentation.runOnMainSync(() -> {
+            timestampListener = new PlayerEventListener() {
+                @Override
+                public void onQueueUpdate(final PlayQueue queue) {
+                    if (queue.getItem() == null || !OTHER_URL.equals(queue.getItem().getUrl())
+                            || observed[0] == player.simpleExoPlayer) {
+                        return;
+                    }
+                    observed[0] = player.simpleExoPlayer;
+                    final ExoPlayer engine = observed[0];
+                    engine.addListener(new com.google.android.exoplayer2.Player.Listener() {
+                        @Override
+                        public void onPlaybackStateChanged(final int state) {
+                            if (state == ExoPlayer.STATE_READY && engine == player.simpleExoPlayer
+                                    && firstTimestampPreparedPosition
+                                    == com.google.android.exoplayer2.C.TIME_UNSET) {
+                                firstTimestampPreparedPosition = engine.getCurrentPosition();
+                            }
+                        }
+                    });
+                }
+
+                @Override
+                public void onPlaybackUpdate(final PlayerPlaybackState state,
+                                             final RepeatMode repeatMode, final boolean shuffled,
+                                             final PlayerPlaybackParameters parameters) { }
+
+                @Override
+                public void onProgressUpdate(final int progress, final int duration,
+                                             final int bufferPercent) { }
+
+                @Override
+                public void onMetadataUpdate(final StreamInfo info, final PlayQueue queue) { }
+
+                @Override
+                public void onServiceStopped() { }
+            };
+            player.setActivityListener(timestampListener);
         });
     }
 
@@ -744,6 +847,9 @@ public class PlayerBrowsingPlaybackTest {
     public void cleanUp() throws Exception {
         instrumentation.runOnMainSync(() -> {
             disposables.clear();
+            if (player != null && timestampListener != null) {
+                player.removeActivityListener(timestampListener);
+            }
             if (startedPlayback) {
                 final Player active = PlayerHolder.getInstance().getPlayer();
                 if (active != null) {

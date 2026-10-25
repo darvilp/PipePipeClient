@@ -126,6 +126,44 @@ public class PlayerModeSwitchingTest {
     }
 
     @Test
+    public void pausedLiveModeSwitchKeepsRecoveryUnsetUntilResume() throws Exception {
+        start(PlayerType.AUDIO, false, false, false, false, true);
+        final Player original = activity.player;
+        final PlayQueue queue = original.getPlayQueue();
+        await(() -> original.getCurrentPosition() >= 1000,
+                "Live playback must reach a nonzero position before pause");
+        instrumentation.runOnMainSync(original::pause);
+        await(original::isLiveIdle, "Paused live source must enter idle");
+        instrumentation.runOnMainSync(() -> {
+            assertEquals(PlayQueue.RECOVERY_UNSET, queue.getRecoveryPosition(queue.getItem()));
+            assertNull(field(original, "playQueueManager"));
+            final Menu menu = new MenuBuilder(activity);
+            activity.onCreateOptionsMenu(menu);
+            activity.onOptionsItemSelected(menu.findItem(R.id.action_switch_popup));
+            assertEquals(PlayerType.POPUP, original.getPlayerType());
+            assertSame(queue, original.getPlayQueue());
+            assertEquals(0, queue.getIndex());
+            assertTrue(original.isLiveIdle());
+            assertFalse(original.getPlayWhenReady());
+            assertNull("A mode change must not resurrect a paused live source",
+                    field(original, "playQueueManager"));
+            assertEquals("Mode changes must not restore a discarded live position",
+                    PlayQueue.RECOVERY_UNSET, queue.getRecoveryPosition(queue.getItem()));
+            original.play();
+        });
+        await(() -> original.simpleExoPlayer.getPlaybackState()
+                == com.google.android.exoplayer2.Player.STATE_READY
+                && original.getCurrentItem() == queue.getItem(), "Current live item resumes");
+        instrumentation.runOnMainSync(() -> {
+            assertFalse(original.isLiveIdle());
+            assertTrue(original.getPlayWhenReady());
+            assertNotNull(field(original, "playQueueManager"));
+            assertTrue("Fixture live default must resume near zero",
+                    original.getCurrentPosition() < 1000);
+        });
+    }
+
+    @Test
     public void mainQueueOffersBothAlternativeModes() throws Exception {
         start(PlayerType.VIDEO);
         instrumentation.runOnMainSync(() -> {

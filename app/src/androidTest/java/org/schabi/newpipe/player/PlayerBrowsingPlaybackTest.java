@@ -138,6 +138,34 @@ public class PlayerBrowsingPlaybackTest {
         checkUrlTimestamp(0);
     }
 
+    @Test
+    public void playNowAndKeepQueuePreservesRequestedTimestamp() throws Exception {
+        start(false);
+        final PlayQueue queue = player.getPlayQueue();
+        final ExoPlayer engine = player.simpleExoPlayer;
+        instrumentation.runOnMainSync(() -> {
+            final StreamInfo target = fixtureMetadata.get(OTHER_URL);
+            target.setStartPosition(5);
+            cacheFixtureMetadata();
+            final PlayQueue request = new SinglePlayQueue(target);
+            assertEquals(5000, request.getRecoveryPosition(request.getItem()));
+            player.handleIntent(NavigationHelper.getPlayerEnqueueNextAndPlayIntent(
+                    main, DeviceUtils.getPlayerServiceClass(), request));
+        });
+        await(() -> engine.getPlaybackState() == ExoPlayer.STATE_READY
+                && player.getCurrentStreamInfo().map(info -> OTHER_URL.equals(info.getUrl()))
+                        .orElse(false), "Selected queued video must prepare");
+        instrumentation.runOnMainSync(() -> {
+            player.pause();
+            assertSame(queue, player.getPlayQueue());
+            assertSame(engine, player.simpleExoPlayer);
+            assertEquals(2, queue.size());
+            assertEquals(1, queue.getIndex());
+            assertEquals("Play now must preserve the requested timestamp", 5000,
+                    player.getCurrentPosition(), 1000);
+        });
+    }
+
     private void checkUrlTimestamp(final int seconds) throws Exception {
         start(false);
         final PlayQueue queue = player.getPlayQueue();

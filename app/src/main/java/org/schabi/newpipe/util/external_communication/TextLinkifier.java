@@ -190,8 +190,8 @@ public final class TextLinkifier {
                     new ClickableSpan() {
                         @Override
                         public void onClick(@NonNull final View view) {
-                            InternalUrlsHandler.handleUrlDescriptionTimestamp(disposables,
-                                    context, relatedInfo.getUrl() + "&t="
+                            InternalUrlsHandler.handleUrlCommentsTimestamp(disposables,
+                                    context, relatedInfo.getUrl() + "#timestamp="
                                             + timestampMatchDTO.seconds());
                         }
                     },

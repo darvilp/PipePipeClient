@@ -133,6 +133,18 @@ public final class InternalUrlsHandler {
             return false;
         }
 
+        final Player player = PlayerHolder.getInstance().getPlayer();
+        final PlayQueue activeQueue = player == null ? null : player.getPlayQueue();
+        if (pattern == HASHTAG_TIMESTAMP_PATTERN && activeQueue != null
+                && !activeQueue.isDisposed() && activeQueue.getItem() != null
+                && activeQueue.getItem().getServiceId() == service.getServiceId()
+                && matchedUrl.equals(activeQueue.getItem().getUrl())) {
+            final Intent seek = new Intent(ACTION_SEEK_TO);
+            seek.putExtra("Timestamp", seconds);
+            context.sendBroadcast(seek);
+            return true;
+        }
+
         if (linkType == StreamingService.LinkType.STREAM && seconds != -1) {
             return playOnMain(context, matchedUrl, service, seconds, disposables);
         } else {
@@ -220,16 +232,6 @@ public final class InternalUrlsHandler {
         }
 
         final Player player = PlayerHolder.getInstance().getPlayer();
-        final PlayQueue activeQueue = player == null ? null : player.getPlayQueue();
-        if (activeQueue != null && !activeQueue.isDisposed() && activeQueue.getItem() != null
-                && activeQueue.getItem().getServiceId() == service.getServiceId()
-                && cleanUrl.equals(activeQueue.getItem().getUrl())) {
-            final Intent seek = new Intent(ACTION_SEEK_TO);
-            seek.putExtra("Timestamp", seconds);
-            context.sendBroadcast(seek);
-            return true;
-        }
-
         final Single<StreamInfo> single
                 = ExtractorHelper.getStreamInfo(service.getServiceId(), cleanUrl, false);
         disposables.add(single.subscribeOn(Schedulers.io())

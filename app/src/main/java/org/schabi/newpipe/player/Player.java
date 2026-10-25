@@ -412,6 +412,7 @@ public final class Player {
     //region Destroy and recovery
 
     void destroyPlayer() {
+        sourceController.setSourceSwitchRecoveryItem(null);
         if (DEBUG) {
             Log.d(TAG, "destroyPlayer() called");
         }
@@ -472,7 +473,10 @@ public final class Player {
     }
 
     public void setRecovery() {
-        if (playQueue == null || exoPlayerIsNull()) {
+        if (playQueue == null || exoPlayerIsNull()
+                || playQueue.getIndex() != simpleExoPlayer.getCurrentMediaItemIndex()) {
+            // A queue selection can precede ExoPlayer's timeline update. Do not save the old
+            // item's position on the newly selected entry.
             return;
         }
 
@@ -480,10 +484,9 @@ public final class Player {
         final long windowPos = simpleExoPlayer.getCurrentPosition();
         final long duration = simpleExoPlayer.getDuration();
 
-        final long newPos =  Math.max(0, Math.min(windowPos, duration));
-        if(newPos > 0) {
-            setRecovery(queuePos, newPos);
-        }
+        final long newPos = Math.max(0, duration == C.TIME_UNSET
+                ? windowPos : Math.min(windowPos, duration));
+        setRecovery(queuePos, newPos);
     }
 
     private void setRecovery(final int queuePos, final long windowPos) {
@@ -989,8 +992,10 @@ public final class Player {
                 }
             case DISCONTINUITY_REASON_SEEK_ADJUSTMENT:
             case DISCONTINUITY_REASON_INTERNAL:
-                // Player index may be invalid when playback is blocked
-                if (!getCurrentState().isBlocked() && newIndex != playQueue.getIndex()) {
+                // Source replacement may still report the previous ExoPlayer index after an
+                // explicit queue selection. Only playback navigation can adopt a new index.
+                if (!getCurrentState().isBlocked() && newIndex != playQueue.getIndex()
+                        && shouldAdoptPlayerIndex(discontinuityReason)) {
                     saveStreamProgressStateCompleted(); // current stream has ended
                     playQueue.setIndex(newIndex);
                 }
@@ -998,6 +1003,12 @@ public final class Player {
             case DISCONTINUITY_REASON_SKIP:
                 break; // only makes Android Studio linter happy, as there are no ads
         }
+    }
+
+    static boolean shouldAdoptPlayerIndex(@DiscontinuityReason final int reason) {
+        return reason == DISCONTINUITY_REASON_AUTO_TRANSITION
+                || reason == DISCONTINUITY_REASON_SEEK
+                || reason == DISCONTINUITY_REASON_SEEK_ADJUSTMENT;
     }
 
     void onRenderedFirstFrame() {
@@ -1224,7 +1235,8 @@ public final class Player {
     MediaSource sourceOf(final PlayerMediaItem item, final StreamInfo info) {
         final long recoveryPosition = playQueue == null
                 ? PlayQueue.RECOVERY_UNSET : playQueue.getRecoveryPosition(item);
-        final long initialPositionMs = shouldSeek()
+        final long initialPositionMs = (shouldSeek()
+                || item.equals(sourceController.getSourceSwitchRecoveryItem()))
                 && recoveryPosition != PlayQueue.RECOVERY_UNSET
                 ? recoveryPosition : 0;
         return sourceResolver.resolve(playerType, isAudioOnly, info, initialPositionMs,
@@ -1311,6 +1323,10 @@ public final class Player {
      * Enter or leave fullscreen, letting the screen orientation follow the player. This is the
      * entry point for everything outside the player.
      */
+    public void cancelPendingFullscreen() {
+        uiModeController.cancelPendingFullscreen();
+    }
+
     public void changeFullscreen(final boolean fullscreen) {
         uiModeController.changeFullscreen(fullscreen);
     }
@@ -1420,6 +1436,14 @@ public final class Player {
         }
 
         return (AppCompatActivity) ((ViewGroup) binding.getRoot().getParent()).getContext();
+    }
+
+    public void setMainPlayerDetailsBrowsing(final boolean browsing) {
+        sourceController.setDetailsBrowsing(browsing);
+    }
+
+    PlayerSourceController getSourceController() {
+        return sourceController;
     }
 
     void useVideoSource(final boolean videoEnabled) {

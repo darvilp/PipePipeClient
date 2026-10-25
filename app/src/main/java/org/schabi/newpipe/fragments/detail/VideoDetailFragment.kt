@@ -14,6 +14,8 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -30,6 +32,7 @@ import org.schabi.newpipe.fragments.list.sponsorblock.SponsorBlockFragment
 import org.schabi.newpipe.fragments.list.sponsorblock.SponsorBlockFragmentListener
 import org.schabi.newpipe.player.PlaybackStartupTrace
 import org.schabi.newpipe.player.Player
+import org.schabi.newpipe.player.PlayerIntentConstants
 import org.schabi.newpipe.player.PlayerError
 import org.schabi.newpipe.player.PlayerPlaybackParameters
 import org.schabi.newpipe.player.PlayerPlaybackState
@@ -41,6 +44,11 @@ import org.schabi.newpipe.player.event.OnKeyDownListener
 import org.schabi.newpipe.player.event.PlayerServiceExtendedEventListener
 import org.schabi.newpipe.player.helper.PlayerHelper
 import org.schabi.newpipe.player.helper.PlayerHolder
+import org.schabi.newpipe.player.helper.MainPlayerQueueActionPolicy
+import org.schabi.newpipe.player.helper.MainPlayerQueueActionPolicy.Action
+import org.schabi.newpipe.player.helper.MainPlayerQueueActionPolicy.QueueSnapshot
+import org.schabi.newpipe.player.helper.MainPlayerQueueBrowsingPolicy
+import org.schabi.newpipe.player.helper.MainPlayerQueueBrowsingPolicy.Relation
 import org.schabi.newpipe.player.mediasession.PlayerServiceInterface
 import org.schabi.newpipe.player.playqueue.PlayQueue
 import org.schabi.newpipe.player.playqueue.SinglePlayQueue
@@ -48,6 +56,7 @@ import org.schabi.newpipe.util.NO_SERVICE_ID
 import org.schabi.newpipe.util.DeviceUtils
 import org.schabi.newpipe.util.NavigationHelper
 import org.schabi.newpipe.util.PermissionHelper
+import org.schabi.newpipe.util.SerializedCache
 
 /**
  * The video detail page, living in the bottom sheet of the main activity, and the host of the
@@ -79,7 +88,10 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         @JvmStatic
         fun getInstance(serviceId: Int, videoUrl: String?, name: String,
                         queue: PlayQueue?): VideoDetailFragment =
-            VideoDetailFragment().apply { setInitialData(serviceId, videoUrl, name, queue) }
+            VideoDetailFragment().apply {
+                setInitialData(serviceId, videoUrl, name, queue)
+                pendingPlaybackQueue = queue
+            }
 
         @JvmStatic
         fun getInstanceInCollapsedState(): VideoDetailFragment =
@@ -98,6 +110,8 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
     /** The last stable state of the bottom sheet, restored when the views are recreated. */
     private var sheetStateToSave = BottomSheetBehavior.STATE_EXPANDED
     private var pendingStartupTraceId = 0L
+    private var pendingDirectFullscreen = false
+    private var pendingPlaybackQueue: PlayQueue? = null
 
     private var player: Player? = null
     private var playerService: PlayerServiceInterface? = null
@@ -135,7 +149,12 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
             // Preloading can be disabled since playback is surely being replaced.
             player?.disablePreloadingOfCurrentTrack()
         }
+        cancelPendingFullscreen()
+        if (mainPlayerRelationFor(newServiceId, newUrl) == Relation.OTHER_ITEM) {
+            continueAudioAndDetachMainPlayerForBrowsing()
+        }
         setInitialData(newServiceId, newUrl, newTitle, newQueue)
+        pendingPlaybackQueue = newQueue
         load(forceLoad = false, addToBackStack = true)
     }
 
@@ -153,16 +172,31 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
      * Opens the main player, asking for fullscreen if [directlyFullscreenIfApplicable].
      */
     fun openVideoPlayer(directlyFullscreenIfApplicable: Boolean) {
-        if (directlyFullscreenIfApplicable) {
-            // The bottom sheet may not be fully expanded yet (STATE_SETTLING). If the activity
-            // is recreated now, the sheet would forget where it was settling to and collapse:
-            // make sure the state restored is the expanded one.
-            sheetStateToSave = BottomSheetBehavior.STATE_EXPANDED
-            // Without a connected player onServiceConnected() issues the same request once the
-            // service started for this playback connects.
-            player?.changeFullscreen(true)
-        }
+        prepareMainPlayerUi(directlyFullscreenIfApplicable)
         openMainPlayer()
+    }
+
+    private fun prepareMainPlayerUi(directlyFullscreenIfApplicable: Boolean) {
+        if (!directlyFullscreenIfApplicable) {
+            cancelPendingFullscreen()
+            return
+        }
+        pendingDirectFullscreen = true
+        sheetStateToSave = BottomSheetBehavior.STATE_EXPANDED
+        applyPendingFullscreen()
+    }
+
+    private fun applyPendingFullscreen() {
+        val player = player ?: return
+        if (pendingDirectFullscreen && _binding != null && player.videoPlayerSelected()) {
+            pendingDirectFullscreen = false
+            player.changeFullscreen(true)
+        }
+    }
+
+    private fun cancelPendingFullscreen() {
+        pendingDirectFullscreen = false
+        player?.cancelPendingFullscreen()
     }
 
     fun openVideoPlayerAutoFullscreen() {
@@ -252,6 +286,11 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         outState.putString(STATE_URL, vm.url)
         outState.putInt(STATE_SHEET, MiniPlayerSheetController.sanitizeSheetState(sheetStateToSave))
         outState.putBoolean(STATE_AUTO_PLAY, autoPlayEnabled)
+        outState.putBoolean("pendingDirectFullscreen", pendingDirectFullscreen)
+        pendingPlaybackQueue?.let {
+            outState.putString("pendingPlaybackQueue",
+                SerializedCache.getInstance().put(it, PlayQueue::class.java))
+        }
     }
 
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
@@ -264,6 +303,15 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         sheetStateToSave = MiniPlayerSheetController.sanitizeSheetState(
             savedInstanceState.getInt(STATE_SHEET, BottomSheetBehavior.STATE_EXPANDED))
         autoPlayEnabled = savedInstanceState.getBoolean(STATE_AUTO_PLAY, true)
+        pendingDirectFullscreen = savedInstanceState.getBoolean("pendingDirectFullscreen")
+        pendingPlaybackQueue = savedInstanceState.getString("pendingPlaybackQueue")?.let {
+            SerializedCache.getInstance().get(it, PlayQueue::class.java)
+        }
+        pendingPlaybackQueue?.let { queue ->
+            pendingInitialData?.let { data ->
+                pendingInitialData = InitialData(data.serviceId, data.url, data.title, queue)
+            }
+        }
     }
 
     override fun onViewStateRestored(savedInstanceState: Bundle?) {
@@ -416,6 +464,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
                 isLoading.set(false)
                 hideMainPlayerOnLoadingNewStream()
                 render(result.info, rebuildTabs = true)
+                attachMainPlayerToDisplayedVideo()
                 header?.showContent()
                 if (result.addToBackStack) {
                     pushToHistory(result.info)
@@ -494,6 +543,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         }
         // Replay the previous item of the queue, if any
         if (player != null && player.videoPlayerSelected()
+            && mainPlayerRelationFor(vm.serviceId, vm.url) == Relation.ACTIVE_ITEM
             && player.playQueue?.previous() == true) {
             return true
         }
@@ -509,9 +559,11 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
     }
 
     private fun setupFromHistoryItem(item: StackItem) {
+        cancelPendingFullscreen()
+        pendingPlaybackQueue = null
         setAutoPlay(false)
-        hideMainPlayerOnLoadingNewStream()
         setInitialData(item.serviceId, item.url, item.title.orEmpty(), item.playQueue)
+        hideMainPlayerOnLoadingNewStream()
         startLoading(false)
         // The item may have been removed from the queue in the background
         val queueItem = item.playQueue.item ?: return
@@ -534,6 +586,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
             NavigationHelper.enqueueOnPlayer(requireActivity(), queue, PlayerType.AUDIO)
         } else {
             NavigationHelper.playOnBackgroundPlayer(requireActivity(), queue, true)
+            pendingPlaybackQueue = null
         }
     }
 
@@ -557,6 +610,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
             NavigationHelper.enqueueOnPlayer(activity, queue, PlayerType.POPUP)
         } else {
             NavigationHelper.playOnPopupPlayer(activity, queue, true)
+            pendingPlaybackQueue = null
         }
     }
 
@@ -565,6 +619,15 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         if (playerService == null || playerHolder.listener == null) {
             PlaybackStartupTrace.mark(pendingStartupTraceId, "waiting_for_player_service")
             playerHolder.startService(autoPlayEnabled, this)
+            return
+        }
+        val info = vm.currentInfo
+        val player = player
+        if (player != null && !player.isStopped && info != null
+            && pendingPlaybackQueue == null
+            && mainPlayerRelationFor(info.serviceId, info.originalUrl) == Relation.ACTIVE_ITEM) {
+            attachMainPlayerToDisplayedVideo()
+            player.play()
             return
         }
         val queue = playQueueForIntent(false) ?: return
@@ -578,11 +641,12 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
             DeviceUtils.getPlayerServiceClass(), queue, true, autoPlayEnabled)
         PlaybackStartupTrace.attach(intent, pendingStartupTraceId)
         ContextCompat.startForegroundService(context, intent)
+        pendingPlaybackQueue = null
     }
 
     /** The queue to play: the current queue, or the current stream alone if [append]. */
     private fun playQueueForIntent(append: Boolean): PlayQueue? {
-        val queue = vm.playQueue
+        val queue = pendingPlaybackQueue ?: vm.playQueue
         if (!append && queue != null && !queue.isEmpty) {
             return queue
         }
@@ -599,6 +663,14 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         val view = playerService.view ?: return
         if (player?.videoPlayerSelected() != true) {
             return
+        }
+        when (mainPlayerRelationFor(vm.serviceId, vm.url)) {
+            Relation.ACTIVE_ITEM -> return
+            Relation.OTHER_ITEM -> {
+                continueAudioAndDetachMainPlayerForBrowsing()
+                return
+            }
+            else -> Unit
         }
         playerView?.removeVideoPlayerView()
         if (isAutoplayEnabled()) {
@@ -620,6 +692,125 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         vm.currentInfo?.let { pendingStartupTraceId = PlaybackStartupTrace.begin(it.id, it.url) }
     }
 
+    private fun mainPlayerRelationFor(targetServiceId: Int, targetUrl: String?): Relation {
+        val player = player ?: return Relation.NO_ACTIVE_MAIN_QUEUE
+        val item = player.playQueue?.item
+        return MainPlayerQueueBrowsingPolicy.classify(player.playerType, false,
+            item?.serviceId, item?.url, targetServiceId, targetUrl)
+    }
+
+    private fun continueAudioAndDetachMainPlayerForBrowsing() {
+        val player = player ?: return
+        val view = playerService?.view ?: return
+        if (!player.videoPlayerSelected()) {
+            return
+        }
+        player.setMainPlayerDetailsBrowsing(true)
+        if (_binding != null) {
+            playerView?.removeVideoPlayerView()
+        }
+        view.visibility = View.GONE
+    }
+
+    private fun attachMainPlayerToDisplayedVideo() {
+        val player = player ?: return
+        val view = playerService?.view ?: return
+        if (player.isStopped
+            || mainPlayerRelationFor(vm.serviceId, vm.url) != Relation.ACTIVE_ITEM) {
+            return
+        }
+        player.setMainPlayerDetailsBrowsing(false)
+        view.visibility = View.VISIBLE
+        playerView?.addVideoPlayerView()
+    }
+
+    private fun handleMainPlayerPlayFromDetails() {
+        val info = vm.currentInfo ?: return
+        val queue = player?.playQueue
+        if (!MainPlayerQueueActionPolicy.shouldShowDialog(
+                mainPlayerRelationFor(info.serviceId, info.originalUrl),
+                player?.isStopped != false, queue?.size() ?: 0)) {
+            replaceQueueAndPlayDisplayedVideo()
+            return
+        }
+        val snapshot = MainPlayerQueueActionPolicy.snapshotOf(queue)
+        if (snapshot == null) {
+            replaceQueueAndPlayDisplayedVideo()
+            return
+        }
+        val choices = arrayOf(getString(R.string.main_player_queue_action_play_now),
+            getString(R.string.main_player_queue_action_add_to_end),
+            getString(R.string.main_player_queue_action_replace))
+        AlertDialog.Builder(requireActivity())
+            .setTitle(R.string.main_player_queue_action_title)
+            .setItems(choices) { _, index ->
+                handleMainPlayerQueueAction(MainPlayerQueueActionPolicy.actionAt(index), info, snapshot)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun handleMainPlayerQueueAction(action: Action, targetInfo: StreamInfo,
+                                             snapshot: QueueSnapshot) {
+        val player = player
+        if (!isAdded || vm.currentInfo !== targetInfo || player == null
+            || !snapshot.matches(player.playQueue)
+            || !MainPlayerQueueActionPolicy.shouldShowDialog(
+                mainPlayerRelationFor(targetInfo.serviceId, targetInfo.originalUrl),
+                player.isStopped, player.playQueue?.size() ?: 0)) {
+            if (isAdded) {
+                Toast.makeText(requireContext(), R.string.main_player_queue_changed,
+                    Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+        when (action) {
+            Action.PLAY_NOW_KEEP_QUEUE -> playDisplayedVideoNextInQueue(targetInfo)
+            Action.ADD_TO_END -> NavigationHelper.enqueueOnPlayer(requireActivity(),
+                SinglePlayQueue(targetInfo), PlayerType.VIDEO)
+            Action.REPLACE_QUEUE -> replaceQueueAndPlayDisplayedVideo()
+        }
+    }
+
+    private fun replaceQueueAndPlayDisplayedVideo() {
+        if (vm.currentInfo == null) {
+            return
+        }
+        beginStartupTrace()
+        autoPlayEnabled = true
+        player?.setRecovery()
+        openVideoPlayerAutoFullscreen()
+    }
+
+    private fun playDisplayedVideoNextInQueue(targetInfo: StreamInfo) {
+        val player = player ?: return
+        pendingStartupTraceId = PlaybackStartupTrace.begin(targetInfo.id, targetInfo.url)
+        autoPlayEnabled = true
+        player.setRecovery()
+        prepareMainPlayerUi(PlayerHelper.isStartMainPlayerFullscreenEnabled(requireContext()))
+        val queue = SinglePlayQueue(targetInfo)
+        PlaybackStartupTrace.mark(pendingStartupTraceId, "play_queue_ready")
+        playerService?.view?.visibility = View.GONE
+        playerView?.addVideoPlayerView()
+        val intent = NavigationHelper.getPlayerEnqueueNextAndPlayIntent(requireContext(),
+            DeviceUtils.getPlayerServiceClass(), queue)
+            .putExtra(PlayerIntentConstants.PLAYER_TYPE, PlayerType.VIDEO.ordinal)
+        PlaybackStartupTrace.attach(intent, pendingStartupTraceId)
+        ContextCompat.startForegroundService(requireContext(), intent)
+        pendingPlaybackQueue = null
+    }
+
+    private fun returnToActiveMainPlayerIfBrowsing(userInitiatedExpansion: Boolean): Boolean {
+        if (!MainPlayerQueueBrowsingPolicy.shouldReturnToActiveItemOnPlayerExpansion(
+                mainPlayerRelationFor(vm.serviceId, vm.url), userInitiatedExpansion)) {
+            return false
+        }
+        val item = playerHolder.currentQueueItem ?: return false
+        NavigationHelper.openVideoDetailFragment(requireContext(), parentFragmentManager,
+            item.serviceId, item.url, item.title, null, false)
+        return true
+    }
+
     // Player service
 
     override fun onServiceConnected(connectedPlayer: Player,
@@ -633,13 +824,16 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         if (!connectedPlayer.videoPlayerSelected() && !playAfterConnect) {
             return
         }
-        if (!connectedPlayer.isStopped && connectedPlayer.videoPlayerSelected()) {
-            playerView?.addVideoPlayerView()
+        when (mainPlayerRelationFor(vm.serviceId, vm.url)) {
+            Relation.ACTIVE_ITEM -> attachMainPlayerToDisplayedVideo()
+            Relation.OTHER_ITEM -> continueAudioAndDetachMainPlayerForBrowsing()
+            else -> Unit
         }
         if (playAfterConnect || (vm.currentInfo != null && isAutoplayEnabled()
                     && connectedPlayer.parentActivity == null)) {
             autoPlayEnabled = true // forcefully start playing
-            openVideoPlayerAutoFullscreen()
+            openVideoPlayer(pendingDirectFullscreen || forceFullscreen
+                || PlayerHelper.isStartMainPlayerFullscreenEnabled(requireContext()))
         }
     }
 
@@ -650,12 +844,21 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
     }
 
     override fun onQueueUpdate(queue: PlayQueue) {
-        vm.playQueue = queue
+        if (pendingPlaybackQueue != null) {
+            return
+        }
+        val relation = mainPlayerRelationFor(vm.serviceId, vm.url)
+        if (relation != Relation.OTHER_ITEM) {
+            vm.playQueue = queue
+            if (relation == Relation.ACTIVE_ITEM) {
+                attachMainPlayerToDisplayedVideo()
+            }
+        }
         // The only place where the history grows while playing: it holds the live queue, so it
         // knows about the items added or removed in the background.
         val top = DetailHistory.peek()
         val item = queue.item
-        if (top != null && top.playQueue != queue && item != null) {
+        if (relation != Relation.OTHER_ITEM && top != null && top.playQueue != queue && item != null) {
             DetailHistory.push(StackItem(item.serviceId, item.url, item.title, queue))
             return
         }
@@ -666,6 +869,10 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
 
     override fun onPlaybackUpdate(state: PlayerPlaybackState, repeatMode: RepeatMode,
                                   shuffled: Boolean, parameters: PlayerPlaybackParameters) {
+        if (_binding == null) {
+            return
+        }
+        applyPendingFullscreen()
         sheet?.setPlayPauseImage(player?.isPlaying == true)
         if (state == PlayerPlaybackState.PLAYING
             && player?.playQueue?.item?.url == vm.url) {
@@ -696,10 +903,12 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         }
         // Different when the user plays something in the popup while browsing here, and then
         // rotates: the new page registers as listener and gets this first call.
+        if (queue == vm.playQueue || player?.videoPlayerSelected() == true) {
+            sheet?.updateOverlayData(info.name, info.uploaderName, info.thumbnailUrl)
+        }
         if (queue != vm.playQueue) {
             return
         }
-        sheet?.updateOverlayData(info.name, info.uploaderName, info.thumbnailUrl)
         if (vm.currentInfo?.url == info.url) {
             return
         }
@@ -718,6 +927,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
     }
 
     override fun onServiceStopped() {
+        cancelPendingFullscreen()
         sheet?.setPlayPauseImage(false)
         vm.currentInfo?.let { sheet?.updateOverlayData(it.name, it.uploaderName, it.thumbnailUrl) }
     }
@@ -726,7 +936,8 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         sheet?.updateDraggableForFullscreen()
         playerView?.setupBrightness()
         val view = playerService?.view
-        if (player?.parentActivity == null || view?.parent == null || _binding == null) {
+        if (player?.parentActivity == null || view?.parent == null || _binding == null
+            || mainPlayerRelationFor(vm.serviceId, vm.url) != Relation.ACTIVE_ITEM) {
             return
         }
         if (fullscreen) {
@@ -780,7 +991,9 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
     private fun cleanUp() {
         DetailHistory.clear()
         vm.cancelLoading()
+        cancelPendingFullscreen()
         playerHolder.stopService()
+        pendingPlaybackQueue = null
         vm.setInitialData(0, null, "", null)
         vm.currentInfo = null
         sheet?.updateOverlayData(null, null, null)
@@ -818,6 +1031,8 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
 
         override fun onSheetHidden() = cleanUp()
 
+        override fun returnToActiveItem(): Boolean = returnToActiveMainPlayerIfBrowsing(true)
+
         override fun onPlayPauseClicked() {
             val player = player
             if (player != null && !player.isStopped) {
@@ -843,11 +1058,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
             this@VideoDetailFragment.openPopupPlayer(append)
 
         override fun playInMainPlayer() {
-            beginStartupTrace()
-            autoPlayEnabled = true // forcefully start playing
-            // FIXME Workaround #7427
-            player?.setRecovery()
-            openVideoPlayerAutoFullscreen()
+            handleMainPlayerPlayFromDetails()
         }
     }
 }

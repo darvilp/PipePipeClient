@@ -29,7 +29,6 @@ import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 
-
 public final class TextLinkifier {
     public static final String TAG = TextLinkifier.class.getSimpleName();
 
@@ -192,7 +191,9 @@ public final class TextLinkifier {
                     new ClickableSpan() {
                         @Override
                         public void onClick(@NonNull final View view) {
-                            DetailPlayerEvents.seekTo(timestampMatchDTO.seconds());
+                            InternalUrlsHandler.handleUrlCommentsTimestamp(disposables,
+                                    context, relatedInfo.getUrl() + "#timestamp="
+                                            + timestampMatchDTO.seconds());
                         }
                     },
                     timestampMatchDTO.timestampStart(),

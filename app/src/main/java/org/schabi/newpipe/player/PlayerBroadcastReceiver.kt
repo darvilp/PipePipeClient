@@ -37,13 +37,14 @@ class PlayerBroadcastReceiver(private val player: Player) {
         when (event) {
             is DetailPlayerEvents.Event.SeekTo -> {
                 player.seekTo(event.seconds * 1000L)
+                player.setRecovery()
                 if (player.progressController.wasPlaying) {
                     player.simpleExoPlayer.play()
                 }
             }
             DetailPlayerEvents.Event.DetailResumed -> {
                 player.listeners.isFragmentVisible = true
-                player.useVideoSource(true)
+                player.useVideoSource(!player.sourceController.isMainPlayerDetailsBrowsing)
             }
             DetailPlayerEvents.Event.DetailStopped -> {
                 player.listeners.isFragmentVisible = false

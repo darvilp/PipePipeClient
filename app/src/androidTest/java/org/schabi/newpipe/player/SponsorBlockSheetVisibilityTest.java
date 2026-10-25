@@ -1,6 +1,8 @@
 package org.schabi.newpipe.player;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import android.app.Service;
@@ -8,6 +10,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.IBinder;
 import android.os.SystemClock;
+import android.view.View;
+import android.view.ViewGroup;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -22,6 +26,7 @@ import org.junit.runner.RunWith;
 import org.schabi.newpipe.MainActivity;
 import org.schabi.newpipe.R;
 import org.schabi.newpipe.databinding.FragmentVideoDetailBinding;
+import org.schabi.newpipe.databinding.PlayerBinding;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 import org.schabi.newpipe.extractor.stream.StreamType;
@@ -42,8 +47,19 @@ import java.util.concurrent.atomic.AtomicReference;
 public class SponsorBlockSheetVisibilityTest {
     @Test
     public void collapsedHostReleasesHoldAndProgressCannotReacquireIt() {
+        checkHiddenHost(false);
+    }
+
+    @Test
+    public void fullscreenHostReleasesHoldAndProgressCannotReacquireIt() {
+        checkHiddenHost(true);
+    }
+
+    private void checkHiddenHost(final boolean fullscreen) {
         final AtomicReference<Player> playing = new AtomicReference<>();
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            final AtomicReference<VideoDetailFragment> host = new AtomicReference<>();
+            final AtomicReference<FragmentVideoDetailBinding> hostViews = new AtomicReference<>();
             final AtomicReference<SponsorBlockFragment> editor = new AtomicReference<>();
             final AtomicReference<BottomSheetBehavior<?>> sheet = new AtomicReference<>();
             scenario.onActivity(activity -> {
@@ -51,12 +67,24 @@ public class SponsorBlockSheetVisibilityTest {
                 set(VideoDetailFragment.class, parent, "bottomSheetState", BottomSheetBehavior.STATE_COLLAPSED);
                 activity.getSupportFragmentManager().beginTransaction()
                         .replace(R.id.fragment_player_holder, parent, "sheet-hold-test").commitNow();
+                host.set(parent);
+                final PlayerBinding playerBinding = PlayerBinding.inflate(activity.getLayoutInflater());
                 final LocalService service = new LocalService(activity);
                 final PlayerServiceInterface serviceInterface = (PlayerServiceInterface) Proxy.newProxyInstance(
                         PlayerServiceInterface.class.getClassLoader(), new Class<?>[]{PlayerServiceInterface.class},
-                        (proxy, method, args) -> method.getName().equals("getInstance") ? service
-                                : method.getReturnType() == boolean.class ? false : null);
+                        (proxy, method, args) -> {
+                            switch (method.getName()) {
+                                case "getInstance": return service;
+                                case "getView": return playerBinding.getRoot();
+                                case "removeViewFromParent":
+                                    final ViewGroup container = (ViewGroup) playerBinding.getRoot().getParent();
+                                    if (container != null) container.removeView(playerBinding.getRoot());
+                                    return null;
+                                default: return method.getReturnType() == boolean.class ? false : null;
+                            }
+                        });
                 final Player player = new Player(serviceInterface);
+                set(Player.class, player, "binding", playerBinding);
                 player.simpleExoPlayer = new ExoPlayer.Builder(activity).build();
                 set(Player.class, player, "exoPlayerEventAdapter", new ExoPlayerEventAdapter(player));
                 playing.set(player);
@@ -69,6 +97,9 @@ public class SponsorBlockSheetVisibilityTest {
                 set(metadata.getClass(), metadata, "currentItem", queue.getItem());
                 set(metadata.getClass(), metadata, "currentMetadata", queue.getItem());
                 set(VideoDetailFragment.class, parent, "player", player);
+                set(VideoDetailFragment.class, parent, "playerService", serviceInterface);
+                set(VideoDetailFragment.class, parent, "serviceId", 0);
+                set(VideoDetailFragment.class, parent, "url", url);
                 final StreamInfo info = new StreamInfo(0, url, url, "Sheet fixture");
                 info.setStreamType(StreamType.VIDEO_STREAM);
                 info.setDuration(60);
@@ -94,7 +125,10 @@ public class SponsorBlockSheetVisibilityTest {
                 set(VideoDetailFragment.class, parent, "pageAdapter", tabs);
                 final FragmentVideoDetailBinding binding = (FragmentVideoDetailBinding)
                         get(VideoDetailFragment.class, parent, "binding");
+                hostViews.set(binding);
+                binding.playerPlaceholder.addView(playerBinding.getRoot());
                 binding.viewPager.setAdapter(tabs);
+                binding.viewPager.setVisibility(View.VISIBLE);
                 editor.set(child);
                 sheet.set(BottomSheetBehavior.from(activity.findViewById(R.id.fragment_player_holder)));
                 sheet.get().setState(BottomSheetBehavior.STATE_EXPANDED);
@@ -106,17 +140,32 @@ public class SponsorBlockSheetVisibilityTest {
                 editor.get().requireView().findViewById(R.id.sponsor_block_controls_mark_segment_start)
                         .performClick();
                 assertTrue(playing.get().simpleExoPlayer.getPauseAtEndOfMediaItems());
-                sheet.get().setState(BottomSheetBehavior.STATE_COLLAPSED);
+                if (fullscreen) {
+                    setFullscreenHost(host.get(), playing.get(), true);
+                    assertSame(hostViews.get().fullscreenPlayerContainer,
+                            playing.get().getRootView().getParent());
+                    assertEquals(View.VISIBLE, hostViews.get().fullscreenPlayerContainer.getVisibility());
+                } else {
+                    sheet.get().setState(BottomSheetBehavior.STATE_COLLAPSED);
+                }
             });
-            awaitSheet(scenario, sheet.get(), BottomSheetBehavior.STATE_COLLAPSED);
+            if (!fullscreen) awaitSheet(scenario, sheet.get(), BottomSheetBehavior.STATE_COLLAPSED);
             scenario.onActivity(activity -> {
-                assertTrue("Collapsing the host does not pause the child", editor.get().isResumed());
-                assertFalse("Collapsed editor must release the queue hold",
+                assertTrue("Hiding the host does not pause the child", editor.get().isResumed());
+                assertTrue(editor.get().getUserVisibleHint());
+                assertFalse("Hidden editor must release the queue hold",
                         playing.get().simpleExoPlayer.getPauseAtEndOfMediaItems());
                 editor.get().refreshEditor();
                 assertFalse("Progress renders must not reacquire an invisible editor's hold",
                         playing.get().simpleExoPlayer.getPauseAtEndOfMediaItems());
-                sheet.get().setState(BottomSheetBehavior.STATE_EXPANDED);
+                if (fullscreen) {
+                    setFullscreenHost(host.get(), playing.get(), false);
+                    assertSame(hostViews.get().playerPlaceholder,
+                            playing.get().getRootView().getParent());
+                    assertEquals(View.GONE, hostViews.get().fullscreenPlayerContainer.getVisibility());
+                } else {
+                    sheet.get().setState(BottomSheetBehavior.STATE_EXPANDED);
+                }
             });
             awaitSheet(scenario, sheet.get(), BottomSheetBehavior.STATE_EXPANDED);
             scenario.onActivity(activity -> assertTrue("The visible draft may hold again",
@@ -129,6 +178,13 @@ public class SponsorBlockSheetVisibilityTest {
                 });
             }
         }
+    }
+
+    private static void setFullscreenHost(final VideoDetailFragment host, final Player player,
+                                          final boolean fullscreen) {
+        // Control orientation state while exercising the real host callback and player reparenting.
+        set(PlayerUiModeController.class, player.getUiModeController(), "isFullscreen", fullscreen);
+        host.onFullscreenStateChanged(fullscreen);
     }
 
     private static void awaitSheet(final ActivityScenario<MainActivity> scenario,

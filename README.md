@@ -1,8 +1,10 @@
 # PipePipe All Features
 
-This local candidate combines the eleven maintained features below with upstream v5.5.0. Version `5.5.0-unofficial.11` retains the `.9` queue-selection fix: internal timeline changes and media-source removal cannot undo an explicit selection made by "Play now and keep queue." Automatic transitions and seeks still update the selection normally.
+This fork combines the maintained features below with upstream v5.5.0. Version `5.5.0-unofficial.14` preserves the All Features application identity and signing certificate for in-place updates.
 
-Each feature was migrated and built independently before integration. The maintained branches and links below use `migrate/v5.5/` and include stable 5.5.0. Publication of this local candidate is pending a device test drive and user approval.
+The release channel is `unofficial/all-features`. APKs and exact source manifests are distributed through [GitHub Releases](https://github.com/darvilp/PipePipeClient/releases). The maintained feature branches use `migrate/v5.5/`; the eight upstream submission drafts are prepared separately.
+
+See [release/README.md](release/README.md) for the canonical build, signing, validation and publication flow. The application is named **PipePipe All Features (Unofficial)** and remains separate from the official app.
 
 ## Included behavior changes
 

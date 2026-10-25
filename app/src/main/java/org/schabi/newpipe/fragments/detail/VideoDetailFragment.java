@@ -1273,7 +1273,8 @@ public final class VideoDetailFragment
                 sponsorBlockFragment.restoreDraft(sponsorBlockDraft);
                 sponsorBlockDraft = null;
                 sponsorBlockFragment.setListener(this);
-                sponsorBlockFragment.setHostVisible(bottomSheetState == BottomSheetBehavior.STATE_EXPANDED);
+                sponsorBlockFragment.setHostVisible(bottomSheetState == BottomSheetBehavior.STATE_EXPANDED
+                        && !(isPlayerAvailable() && player.isFullscreen()));
                 sponsorBlockFragment.setSubmitting(info.getUrl().equals(sponsorBlockSubmissionUrl)
                         && info.getServiceId() == sponsorBlockSubmissionServiceId);
 
@@ -2369,6 +2370,8 @@ public final class VideoDetailFragment
 
     @Override
     public void onFullscreenStateChanged(final boolean fullscreen) {
+        getSponsorBlockFragment().ifPresent(editor -> editor.setHostVisible(!fullscreen
+                && bottomSheetState == BottomSheetBehavior.STATE_EXPANDED));
         updateBottomSheetDraggableForFullscreen();
         setupBrightness();
         if (!isPlayerAndPlayerServiceAvailable()
@@ -2869,7 +2872,8 @@ public final class VideoDetailFragment
             return;
         }
         getSponsorBlockFragment().ifPresent(editor ->
-                editor.setHostVisible(state == BottomSheetBehavior.STATE_EXPANDED));
+                editor.setHostVisible(state == BottomSheetBehavior.STATE_EXPANDED
+                        && !(isPlayerAvailable() && player.isFullscreen())));
         final AppBarLayout.Behavior appBarBehavior = getAppBarBehavior();
         switch (state) {
             case BottomSheetBehavior.STATE_COLLAPSED:

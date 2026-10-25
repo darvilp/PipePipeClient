@@ -1,6 +1,6 @@
 # PipePipe All Features
 
-This fork combines the maintained features below with upstream v5.5.0. Version `5.5.0-unofficial.14` preserves the All Features application identity and signing certificate for in-place updates.
+This fork combines the maintained features below with upstream v5.5.0. Version `5.5.0-unofficial.15` preserves the All Features application identity and signing certificate for in-place updates.
 
 The release channel is `unofficial/all-features`. APKs and exact source manifests are distributed through [GitHub Releases](https://github.com/darvilp/PipePipeClient/releases). The maintained feature branches use `migrate/v5.5/`; the eight upstream submission drafts are prepared separately.
 

@@ -412,6 +412,7 @@ public final class Player {
     //region Destroy and recovery
 
     void destroyPlayer() {
+        sourceController.setSourceSwitchRecoveryItem(null);
         if (DEBUG) {
             Log.d(TAG, "destroyPlayer() called");
         }

@@ -451,6 +451,7 @@ public final class Player {
     }
 
     public void destroy() {
+        startController.cancelModeRequest();
         if (DEBUG) {
             Log.d(TAG, "destroy() called");
         }
@@ -472,9 +473,26 @@ public final class Player {
 
     }
 
+    public long requestMainPlaybackMode() {
+        return startController.requestMainPlaybackMode();
+    }
+
+    public boolean isMainPlaybackModeRequestCurrent(final long request) {
+        return startController.isMainPlaybackModeRequestCurrent(request);
+    }
+
+    public boolean isModeSwitchReady() {
+        return startController.isModeSwitchReady();
+    }
+
+    public boolean switchPlaybackMode(@NonNull final PlayerType target) {
+        return startController.switchPlaybackMode(target);
+    }
+
     public void setRecovery() {
         if (playQueue == null || exoPlayerIsNull()
-                || playQueue.getIndex() != simpleExoPlayer.getCurrentMediaItemIndex()) {
+                || playQueue.getIndex() != simpleExoPlayer.getCurrentMediaItemIndex()
+                || (getCurrentItem() != null && !getCurrentItem().equals(playQueue.getItem()))) {
             // A queue selection can precede ExoPlayer's timeline update. Do not save the old
             // item's position on the newly selected entry.
             return;
@@ -559,6 +577,10 @@ public final class Player {
             return;
         }
 
+        final PlayerMediaItem selected = playQueue == null ? null : playQueue.getItem();
+        if (selected != null && StreamTypeUtil.isLiveStream(selected.getStreamType())) {
+            playQueue.unsetRecovery(playQueue.getIndex());
+        }
         liveIdle = false;
         reloadPlayQueueManager();
     }
@@ -573,6 +595,7 @@ public final class Player {
     }
 
     void onPlaybackShutdown() {
+        startController.cancelModeRequest();
         if (DEBUG) {
             Log.d(TAG, "onPlaybackShutdown() called");
         }
@@ -1400,8 +1423,7 @@ public final class Player {
                     useVideoSource(false);
                     break;
                 case MINIMIZE_ON_EXIT_MODE_POPUP:
-                    setRecovery();
-                    NavigationHelper.playOnPopupPlayer(context, playQueue, true);
+                    NavigationHelper.switchPlayerMode(context, this, PlayerType.POPUP);
                     break;
                 case MINIMIZE_ON_EXIT_MODE_NONE: default:
                     pause();

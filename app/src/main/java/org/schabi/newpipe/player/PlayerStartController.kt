@@ -188,9 +188,11 @@ class PlayerStartController(private val player: Player) {
                 player.simpleExoPlayer.prepare()
             }
             if (player.shouldSeek()) {
+                val position = newQueue.getRecoveryPosition(newQueue.getItem()!!)
+                playQueue.setRecovery(playQueue.index, position)
                 player.simpleExoPlayer.seekTo(
                     playQueue.index,
-                    newQueue.getRecoveryPosition(newQueue.getItem()!!),
+                    position,
                 )
             }
             player.simpleExoPlayer.setPlayWhenReady(playWhenReady)

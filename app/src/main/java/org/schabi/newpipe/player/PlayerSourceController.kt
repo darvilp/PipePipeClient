@@ -17,6 +17,8 @@ import org.schabi.newpipe.player.resolver.VideoPlaybackResolver.SourceType
  */
 class PlayerSourceController(private val player: Player) {
 
+    var sourceSwitchRecoveryItem: org.schabi.newpipe.player.mediaitem.PlayerMediaItem? = null
+
     var isMainPlayerDetailsBrowsing = false
 
     /** Keep the active main queue playing as audio while another detail page is shown. */
@@ -38,6 +40,7 @@ class PlayerSourceController(private val player: Player) {
             return
         }
 
+        player.setRecovery()
         player.setAudioOnly(!videoEnabled)
         // When a user returns from background, controls could be hidden but SystemUI will be shown
         // 100%. Hide it.
@@ -49,11 +52,7 @@ class PlayerSourceController(private val player: Player) {
         // in livestreams) so we should be not able to execute the block below.
         // Reload the play queue manager in this case, which is the behavior when we don't know the
         // index of the video renderer or playQueueManagerReloadingNeeded returns true.
-        val info = player.currentStreamInfo.orElse(null) ?: run {
-            player.reloadPlayQueueManager()
-            player.setRecovery()
-            return
-        }
+        val info = player.currentStreamInfo.orElse(null)
 
         // In the case we don't know the source type, fallback to the one with video with audio or
         // audio-only source.
@@ -63,17 +62,19 @@ class PlayerSourceController(private val player: Player) {
 
         // A SABR source already exposes both audio and video, so background / foreground video
         // toggles only need to update Media3 track selection instead of rebuilding the source.
-        if (!isCurrentStreamSabr()
-            && playQueueManagerReloadingNeeded(sourceType, info, getVideoRendererIndex())
+        if (info == null || (!isCurrentStreamSabr()
+            && playQueueManagerReloadingNeeded(sourceType, info, getVideoRendererIndex()))
         ) {
+            if (playQueue.index == player.simpleExoPlayer.currentMediaItemIndex
+                && (player.currentItem == null || player.currentItem == playQueue.item)) {
+                sourceSwitchRecoveryItem = playQueue.item
+            }
             player.reloadPlayQueueManager()
         } else {
             val streamType = info.streamType
             if (streamType == StreamType.AUDIO_STREAM
                 || streamType == StreamType.AUDIO_LIVE_STREAM
             ) {
-                // Nothing to do more than setting the recovery position
-                player.setRecovery()
                 return
             }
 
@@ -86,7 +87,6 @@ class PlayerSourceController(private val player: Player) {
             player.trackSelector.setParameters(parametersBuilder)
         }
 
-        player.setRecovery()
     }
 
     /**

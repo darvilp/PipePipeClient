@@ -412,6 +412,7 @@ public final class Player {
     //region Destroy and recovery
 
     void destroyPlayer() {
+        sourceController.setSourceSwitchRecoveryItem(null);
         if (DEBUG) {
             Log.d(TAG, "destroyPlayer() called");
         }
@@ -1232,7 +1233,8 @@ public final class Player {
     MediaSource sourceOf(final PlayerMediaItem item, final StreamInfo info) {
         final long recoveryPosition = playQueue == null
                 ? PlayQueue.RECOVERY_UNSET : playQueue.getRecoveryPosition(item);
-        final long initialPositionMs = shouldSeek()
+        final long initialPositionMs = (shouldSeek()
+                || item.equals(sourceController.getSourceSwitchRecoveryItem()))
                 && recoveryPosition != PlayQueue.RECOVERY_UNSET
                 ? recoveryPosition : 0;
         return sourceResolver.resolve(playerType, isAudioOnly, info, initialPositionMs,

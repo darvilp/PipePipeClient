@@ -54,6 +54,7 @@ class PlayerStartController(private val player: Player) {
             return
         }
 
+        player.sourceController.sourceSwitchRecoveryItem = null
         player.sourceController.isMainPlayerDetailsBrowsing = false
 
         val parametersBuilder = player.trackSelector.buildUponParameters()

@@ -42,6 +42,9 @@ import org.schabi.newpipe.extractor.stream.StreamType;
 import org.schabi.newpipe.extractor.stream.VideoStream;
 import org.schabi.newpipe.fragments.detail.VideoDetailFragment;
 import org.schabi.newpipe.player.helper.PlayerHolder;
+import org.schabi.newpipe.player.mediaitem.ExoMediaItems;
+import org.schabi.newpipe.player.mediaitem.PlayerMediaItem;
+import org.schabi.newpipe.player.mediaitem.StreamInfoResolver;
 import org.schabi.newpipe.player.playqueue.PlayQueue;
 import org.schabi.newpipe.player.playqueue.SinglePlayQueue;
 import org.schabi.newpipe.player.resolver.VideoPlaybackResolver.SourceType;
@@ -64,6 +67,7 @@ import java.util.Set;
 import java.util.function.BooleanSupplier;
 
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.subjects.SingleSubject;
 
 /** Real main-player navigation with cached metadata and generated local media. */
 @RunWith(AndroidJUnit4.class)
@@ -246,6 +250,100 @@ public class PlayerBrowsingPlaybackTest {
                 "Returning to the current details prepares and reattaches video");
         instrumentation.runOnMainSync(() ->
                 assertPlaybackUnchanged(queue, engine, session, token, before));
+    }
+
+    @Test
+    public void timestampDuringReturnSourceReloadWinsOverCapturedRecovery() throws Exception {
+        start(false);
+        final PlayQueue queue = player.getPlayQueue();
+        final ExoPlayer engine = player.simpleExoPlayer;
+        instrumentation.runOnMainSync(() -> {
+            assertEquals(1, queue.size());
+            assertTrue(player.shouldSeek());
+            assertTrue(PreferenceManager.getDefaultSharedPreferences(main).edit()
+                    .putString(main.getString(R.string.autoplay_key),
+                            main.getString(R.string.autoplay_never_key)).commit());
+            player.pause();
+            engine.seekTo(7000);
+        });
+        await(() -> engine.getPlaybackState() == ExoPlayer.STATE_READY
+                && Math.abs(engine.getCurrentPosition() - 7000) < 100,
+                "Paused real video prepared at seven seconds");
+        instrumentation.runOnMainSync(() -> {
+            cacheFixtureMetadata();
+            NavigationHelper.openVideoDetailFragment(main, main.getSupportFragmentManager(),
+                    0, OTHER_URL, "Other browsing fixture", null, false);
+        });
+        await(() -> detailsShow("Other browsing fixture") && player.isAudioOnly()
+                && engine.getPlaybackState() == ExoPlayer.STATE_READY,
+                "Browsing prepares the active item's real audio-only source");
+
+        final Object audioManager = sourceManager();
+        final Object[] returnManager = new Object[1];
+        final SingleSubject<StreamInfo> metadataGate = SingleSubject.create();
+        final boolean[] timestampSeek = {false};
+        instrumentation.runOnMainSync(() -> {
+            assertSame(queue, player.getPlayQueue());
+            assertEquals(7000, engine.getCurrentPosition(), 100);
+            assertFalse(ExoMediaItems.fromMediaItem(engine.getCurrentMediaItem())
+                    .flatMap(PlayerMediaItem::getMaybeQuality).isPresent());
+            // Start the fragment's return-source action here to gate metadata before queued loads.
+            player.setMainPlayerDetailsBrowsing(false);
+            returnManager[0] = sourceManager();
+            assertNotSame(audioManager, returnManager[0]);
+            assertEquals(7000, queue.getRecoveryPosition(queue.getItem()), 100);
+            try {
+                final Field resolver = returnManager[0].getClass()
+                        .getDeclaredField("streamInfoResolver");
+                resolver.setAccessible(true);
+                resolver.set(returnManager[0], (StreamInfoResolver) item -> {
+                    assertEquals(CURRENT_URL, item.getUrl());
+                    return metadataGate;
+                });
+            } catch (final ReflectiveOperationException error) {
+                throw new AssertionError(error);
+            }
+            engine.addListener(new com.google.android.exoplayer2.Player.Listener() {
+                @Override
+                public void onPositionDiscontinuity(
+                        final com.google.android.exoplayer2.Player.PositionInfo previous,
+                        final com.google.android.exoplayer2.Player.PositionInfo next,
+                        final int reason) {
+                    if (reason == com.google.android.exoplayer2.Player.DISCONTINUITY_REASON_SEEK
+                            && next.positionMs == 5000) {
+                        timestampSeek[0] = true;
+                    }
+                }
+            });
+            assertTrue(PreferenceManager.getDefaultSharedPreferences(main).edit()
+                    .putString(main.getString(R.string.autoplay_key),
+                            main.getString(R.string.autoplay_always_key)).commit());
+        });
+        await(metadataGate::hasObservers, "Return source requests gated fixture metadata");
+        instrumentation.runOnMainSync(() -> {
+            cacheFixtureMetadata();
+            assertTrue(InternalUrlsHandler.handleUrlDescriptionTimestamp(disposables,
+                    main, CURRENT_URL + "&t=5"));
+        });
+        await(() -> timestampSeek[0] && Math.abs(engine.getCurrentPosition() - 5000) < 500,
+                "URL timestamp must seek to five seconds while return metadata is held");
+        instrumentation.runOnMainSync(() -> {
+            assertFalse(metadataGate.hasValue());
+            assertSame(returnManager[0], sourceManager());
+            engine.setPlayWhenReady(false);
+            metadataGate.onSuccess(fixtureMetadata.get(CURRENT_URL));
+        });
+        await(() -> engine.getPlaybackState() == ExoPlayer.STATE_READY
+                && detailsShow("Current browsing fixture")
+                && ExoMediaItems.fromMediaItem(engine.getCurrentMediaItem())
+                        .flatMap(PlayerMediaItem::getMaybeQuality).isPresent(),
+                "The gated return video source prepares through the real source manager");
+        instrumentation.runOnMainSync(() -> {
+            assertSame(queue, player.getPlayQueue());
+            assertSame(engine, player.simpleExoPlayer);
+            assertEquals("Explicit timestamp must survive delayed return-source synchronization",
+                    5000, engine.getCurrentPosition(), 750);
+        });
     }
 
     private void assertPlaybackUnchanged(final PlayQueue queue, final ExoPlayer engine,

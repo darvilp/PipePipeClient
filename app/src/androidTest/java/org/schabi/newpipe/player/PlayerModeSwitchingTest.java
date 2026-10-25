@@ -385,7 +385,7 @@ public class PlayerModeSwitchingTest {
             final String displayedUrl = pendingReplacement ? activeUrl
                     : queue.getItem(1).getUrl();
             final PlayQueue replacement = pendingReplacement ? new SinglePlayQueue(
-                    new StreamInfoItem(0, activeUrl, "Replacement", StreamType.VIDEO_STREAM))
+                    streamItem(0, activeUrl, "Replacement", StreamType.VIDEO_STREAM))
                     : null;
             NavigationHelper.openVideoDetailFragment(host, host.getSupportFragmentManager(),
                     0, displayedUrl, "Browsed details", replacement, false);
@@ -463,7 +463,7 @@ public class PlayerModeSwitchingTest {
             activity.onCreateOptionsMenu(menu);
             activity.onOptionsItemSelected(menu.findItem(R.id.action_switch_main));
             original.handleIntent(NavigationHelper.getPlayerIntent(main,
-                    DeviceUtils.getPlayerServiceClass(), new SinglePlayQueue(new StreamInfoItem(
+                    DeviceUtils.getPlayerServiceClass(), new SinglePlayQueue(streamItem(
                             0, replacementUrl, "Replacement", StreamType.VIDEO_STREAM)), false, false)
                     .putExtra(PlayerIntentConstants.PLAYER_TYPE, PlayerType.AUDIO.ordinal()));
         });
@@ -894,7 +894,7 @@ public class PlayerModeSwitchingTest {
         final Player original = activity.player;
         final PlayQueue queue = original.getPlayQueue();
         instrumentation.runOnMainSync(() -> {
-            queue.append(new SinglePlayQueue(new StreamInfoItem(
+            queue.append(new SinglePlayQueue(streamItem(
                     0, queue.getItem().getUrl(), "Duplicate", StreamType.VIDEO_STREAM)).getItem());
             original.onShuffleClicked();
         });
@@ -1134,8 +1134,8 @@ public class PlayerModeSwitchingTest {
                 InfoCache.getInstance().putInfo(0, url, info, InfoItem.InfoType.STREAM);
             }
             final PlayQueue queue = new SinglePlayQueue(Arrays.asList(
-                    new StreamInfoItem(0, first, "First", streamType),
-                    new StreamInfoItem(0, second, "Second", streamType)), 0);
+                    streamItem(0, first, "First", streamType),
+                    streamItem(0, second, "Second", streamType)), 0);
             ContextCompat.startForegroundService(main, NavigationHelper.getPlayerIntent(main,
                     DeviceUtils.getPlayerServiceClass(), queue, false, live)
                     .putExtra(PlayerIntentConstants.PLAYER_TYPE, type.ordinal()));
@@ -1156,6 +1156,13 @@ public class PlayerModeSwitchingTest {
             instrumentation.runOnMainSync(() -> assertNotNull(activity.player.getCurrentStreamInfo()
                     .orElse(null)));
         }
+    }
+
+    private static StreamInfoItem streamItem(final int serviceId, final String url,
+                                             final String title, final StreamType type) {
+        final StreamInfoItem item = new StreamInfoItem(serviceId, url, title, type);
+        item.setUploaderName("Synthetic fixture");
+        return item;
     }
 
     private void launchMain() {

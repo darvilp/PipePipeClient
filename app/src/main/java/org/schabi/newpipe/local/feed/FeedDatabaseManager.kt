@@ -200,6 +200,10 @@ class FeedDatabaseManager internal constructor(private val database: AppDatabase
         subscriptionIds: Set<Long>,
         contentSelectionOverrides: Map<Long, FeedContentSelection>
     ): Completable {
+        val submittedSubscriptions = subscriptionIds.toSet()
+        val submittedOverrides = FeedGroupContentRules.normalizeOverrides(
+            contentSelection, submittedSubscriptions, contentSelectionOverrides
+        )
         return Completable.fromAction {
             database.runInTransaction {
                 val groupId = feedGroupTable.insert(
@@ -207,12 +211,8 @@ class FeedDatabaseManager internal constructor(private val database: AppDatabase
                 )
                 feedGroupTable.updateContentRulesForGroup(
                     groupId,
-                    subscriptionIds,
-                    FeedGroupContentRules.normalizeOverrides(
-                        contentSelection,
-                        subscriptionIds,
-                        contentSelectionOverrides
-                    )
+                    submittedSubscriptions,
+                    submittedOverrides
                 )
             }
         }.subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread())
@@ -235,16 +235,16 @@ class FeedDatabaseManager internal constructor(private val database: AppDatabase
         subscriptionIds: Set<Long>,
         contentSelectionOverrides: Map<Long, FeedContentSelection>
     ): Completable {
+        val submittedSubscriptions = subscriptionIds.toSet()
+        val submittedOverrides = FeedGroupContentRules.normalizeOverrides(
+            feedGroupEntity.contentSelection, submittedSubscriptions, contentSelectionOverrides
+        )
         return Completable.fromAction {
             database.runInTransaction {
                 feedGroupTable.updateContentRulesForGroup(
                     feedGroupEntity.uid,
-                    subscriptionIds,
-                    FeedGroupContentRules.normalizeOverrides(
-                        feedGroupEntity.contentSelection,
-                        subscriptionIds,
-                        contentSelectionOverrides
-                    )
+                    submittedSubscriptions,
+                    submittedOverrides
                 )
                 feedGroupTable.update(feedGroupEntity)
             }

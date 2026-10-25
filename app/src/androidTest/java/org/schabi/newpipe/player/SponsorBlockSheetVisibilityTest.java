@@ -89,8 +89,10 @@ public class SponsorBlockSheetVisibilityTest {
                 set(Player.class, player, "exoPlayerEventAdapter", new ExoPlayerEventAdapter(player));
                 playing.set(player);
                 final String url = "https://example.invalid/sheet-video";
-                final SinglePlayQueue queue = new SinglePlayQueue(
-                        new StreamInfoItem(0, url, "Sheet fixture", StreamType.VIDEO_STREAM));
+                final StreamInfoItem item = new StreamInfoItem(
+                        0, url, "Sheet fixture", StreamType.VIDEO_STREAM);
+                item.setUploaderName("Synthetic fixture");
+                final SinglePlayQueue queue = new SinglePlayQueue(item);
                 queue.init();
                 set(Player.class, player, "playQueue", queue);
                 final Object metadata = get(Player.class, player, "metadataController");

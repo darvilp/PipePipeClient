@@ -145,7 +145,7 @@ public class PlayerModeSwitchingTest {
         final PlayQueue queue = original.getPlayQueue();
         final String url = "https://www.youtube.com/watch?v=ccccccccccc";
         final StreamInfo info = new StreamInfo(0, url, url, "Audio on demand fixture");
-        info.setStreamType(StreamType.AUDIO_STREAM);
+        info.setStreamType(StreamType.VIDEO_STREAM);
         info.setDuration(30);
         info.setUploaderName("Synthetic fixture");
         info.setDescription(Description.EMPTY_DESCRIPTION);

@@ -429,8 +429,8 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
         if (!wasContentRulesChanged) {
             selectedContentSelectionMask = feedGroupEntity?.contentSelection?.mask
                 ?: FeedContentSelection.ALL.mask
-            updateContentRulesUi()
         }
+        updateContentRulesUi()
 
         val feedGroupIcon = if (selectedIcon == null) icon else selectedIcon!!
         feedGroupCreateBinding.iconPreview.setImageResource(feedGroupIcon.getDrawableRes())
@@ -634,6 +634,8 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
                     contentSelectionLabel(selection),
                     subscriptionIds.size
                 )
+                binding.editContentRuleButton.isEnabled = loaded
+                binding.deleteContentRuleButton.isEnabled = loaded
                 binding.editContentRuleButton.setOnClickListener {
                     beginEditingContentRule(selection)
                 }

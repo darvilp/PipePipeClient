@@ -410,6 +410,16 @@ public class PlayerBrowsingPlaybackTest {
 
     @Test
     public void timestampDuringReturnSourceReloadWinsOverCapturedRecovery() throws Exception {
+        checkTimestampDuringReturnSourceReload(false);
+    }
+
+    @Test
+    public void plainTimestampDuringReturnSourceReloadWinsOverCapturedRecovery() throws Exception {
+        checkTimestampDuringReturnSourceReload(true);
+    }
+
+    private void checkTimestampDuringReturnSourceReload(final boolean plainTimestamp)
+            throws Exception {
         start(false);
         final PlayQueue queue = player.getPlayQueue();
         final ExoPlayer engine = player.simpleExoPlayer;
@@ -480,18 +490,32 @@ public class PlayerBrowsingPlaybackTest {
                             main.getString(R.string.autoplay_always_key)).commit());
         });
         await(metadataGate::hasObservers, "Return source requests gated fixture metadata");
+        if (plainTimestamp) {
+            instrumentation.runOnMainSync(() -> {
+                cacheFixtureMetadata();
+                NavigationHelper.openVideoDetailFragment(main, main.getSupportFragmentManager(),
+                        0, CURRENT_URL, "Current browsing fixture", null, false);
+            });
+            await(() -> detailsShow("Current browsing fixture"),
+                    "Current details are available while the return source is pending");
+        }
         instrumentation.runOnMainSync(() -> {
             cacheFixtureMetadata();
-            assertTrue(InternalUrlsHandler.handleUrlDescriptionTimestamp(disposables,
-                    main, CURRENT_URL + "&t=5"));
+            if (plainTimestamp) {
+                assertTrue(InternalUrlsHandler.handleUrlCommentsTimestamp(disposables,
+                        main, CURRENT_URL + "#timestamp=5"));
+            } else {
+                assertTrue(InternalUrlsHandler.handleUrlDescriptionTimestamp(disposables,
+                        main, CURRENT_URL + "&t=5"));
+            }
         });
         await(() -> timestampSeek[0] && Math.abs(engine.getCurrentPosition() - 5000) < 500,
-                "URL timestamp must seek to five seconds while return metadata is held");
+                "Timestamp must seek to five seconds while return metadata is held");
         instrumentation.runOnMainSync(() -> {
             assertFalse(metadataGate.hasValue());
             assertSame(returnManager[0], sourceManager());
-            assertTrue("Timestamp playback remains enabled while metadata is held",
-                    engine.getPlayWhenReady());
+            assertEquals("Plain timestamps preserve pause; URL playback starts playing",
+                    !plainTimestamp, engine.getPlayWhenReady());
             recoveryEvidence.putLong("afterTimestampRecoveryMs",
                     queue.getRecoveryPosition(queue.getItem()));
             instrumentation.sendStatus(0, recoveryEvidence);
@@ -505,6 +529,8 @@ public class PlayerBrowsingPlaybackTest {
         instrumentation.runOnMainSync(() -> {
             assertSame(queue, player.getPlayQueue());
             assertSame(engine, player.simpleExoPlayer);
+            assertEquals("Timestamp route must retain its play intent after source preparation",
+                    !plainTimestamp, engine.getPlayWhenReady());
             recoveryEvidence.putLong("preparedRecoveryMs",
                     queue.getRecoveryPosition(queue.getItem()));
             recoveryEvidence.putLong("preparedPositionMs", engine.getCurrentPosition());

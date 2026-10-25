@@ -9,13 +9,16 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import android.app.Activity;
+import android.app.AppOpsManager;
 import android.app.Instrumentation;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.text.Spanned;
 import android.text.style.ClickableSpan;
 import android.text.style.URLSpan;
@@ -51,6 +54,7 @@ import org.schabi.newpipe.extractor.stream.VideoStream;
 import org.schabi.newpipe.fragments.detail.VideoDetailFragment;
 import org.schabi.newpipe.info_list.InfoItemBuilder;
 import org.schabi.newpipe.info_list.holder.CommentsMiniInfoItemHolder;
+import org.schabi.newpipe.player.PlayerService.PlayerType;
 import org.schabi.newpipe.player.helper.PlayerHolder;
 import org.schabi.newpipe.player.mediaitem.ExoMediaItems;
 import org.schabi.newpipe.player.mediaitem.PlayerMediaItem;
@@ -93,6 +97,7 @@ public class PlayerBrowsingPlaybackTest {
     private MainActivity main;
     private Player player;
     private boolean startedPlayback;
+    private int savedPopupAppOp = -1;
 
     @Before
     public void isolatePlaybackPreferences() {
@@ -151,7 +156,17 @@ public class PlayerBrowsingPlaybackTest {
 
     @Test
     public void descriptionTimestampTargetsBrowsedVideo() throws Exception {
-        browseTimestampedVideo();
+        checkDescriptionTimestampTargetsBrowsedVideo(PlayerType.VIDEO);
+    }
+
+    @Test
+    public void audioDescriptionTimestampTargetsBrowsedVideo() throws Exception {
+        checkDescriptionTimestampTargetsBrowsedVideo(PlayerType.AUDIO);
+    }
+
+    private void checkDescriptionTimestampTargetsBrowsedVideo(final PlayerType type)
+            throws Exception {
+        browseTimestampedVideo(type);
         await(() -> descriptionTimestampView() != null
                 && descriptionTimestampView().getText() instanceof Spanned
                 && ((Spanned) descriptionTimestampView().getText()).getSpans(0,
@@ -167,7 +182,23 @@ public class PlayerBrowsingPlaybackTest {
 
     @Test
     public void currentVideoDescriptionTimestampKeepsExistingQueue() throws Exception {
+        checkCurrentVideoDescriptionTimestampKeepsExistingQueue(PlayerType.VIDEO);
+    }
+
+    @Test
+    public void currentAudioDescriptionTimestampKeepsExistingQueue() throws Exception {
+        checkCurrentVideoDescriptionTimestampKeepsExistingQueue(PlayerType.AUDIO);
+    }
+
+    @Test
+    public void currentPopupDescriptionTimestampKeepsExistingQueue() throws Exception {
+        checkCurrentVideoDescriptionTimestampKeepsExistingQueue(PlayerType.POPUP);
+    }
+
+    private void checkCurrentVideoDescriptionTimestampKeepsExistingQueue(final PlayerType type)
+            throws Exception {
         start(false);
+        selectPlayerType(type);
         final PlayQueue queue = player.getPlayQueue();
         final TextView[] text = new TextView[1];
         instrumentation.runOnMainSync(() -> {
@@ -186,6 +217,7 @@ public class PlayerBrowsingPlaybackTest {
         await(() -> Math.abs(player.getCurrentPosition() - 12000) < 1000,
                 "Current-video timestamp must seek without replacing its queue");
         instrumentation.runOnMainSync(() -> {
+            assertEquals(type, player.getPlayerType());
             player.pause();
             assertSame(queue, player.getPlayQueue());
             assertEquals(2, queue.size());
@@ -195,7 +227,16 @@ public class PlayerBrowsingPlaybackTest {
 
     @Test
     public void commentTimestampTargetsBrowsedVideo() throws Exception {
-        browseTimestampedVideo();
+        checkCommentTimestampTargetsBrowsedVideo(PlayerType.VIDEO);
+    }
+
+    @Test
+    public void popupCommentTimestampTargetsBrowsedVideo() throws Exception {
+        checkCommentTimestampTargetsBrowsedVideo(PlayerType.POPUP);
+    }
+
+    private void checkCommentTimestampTargetsBrowsedVideo(final PlayerType type) throws Exception {
+        browseTimestampedVideo(type);
         final TextView[] text = new TextView[1];
         instrumentation.runOnMainSync(() -> {
             final CommentsInfoItem comment = new CommentsInfoItem(0, OTHER_URL, "Fixture comment");
@@ -233,21 +274,57 @@ public class PlayerBrowsingPlaybackTest {
         assertTimestampTargetsBrowsedVideo("Comment timestamps must target displayed video");
     }
 
-    private void browseTimestampedVideo() throws Exception {
+    private void browseTimestampedVideo(final PlayerType type) throws Exception {
         start(false);
+        selectPlayerType(type);
         instrumentation.runOnMainSync(() -> {
             assertTrue(PreferenceManager.getDefaultSharedPreferences(main).edit()
                     .putString(main.getString(R.string.autoplay_key),
-                            main.getString(R.string.autoplay_never_key)).commit());
+                            main.getString(type == PlayerType.VIDEO
+                                    ? R.string.autoplay_never_key : R.string.autoplay_always_key))
+                    .commit());
             fixtureMetadata.get(OTHER_URL).setDescription(
                     new Description("0:12 jump", Description.PLAIN_TEXT));
             cacheFixtureMetadata();
             NavigationHelper.openVideoDetailFragment(main, main.getSupportFragmentManager(),
                     0, OTHER_URL, "Other browsing fixture", null, false);
         });
-        await(() -> detailsShow("Other browsing fixture") && player.isAudioOnly()
+        await(() -> detailsShow("Other browsing fixture")
+                && player.getPlayerType() == type
+                && (type == PlayerType.POPUP || player.isAudioOnly())
                 && player.simpleExoPlayer.getPlaybackState() == ExoPlayer.STATE_READY,
                 "Browse another video while the original keeps playing");
+    }
+
+    private void selectPlayerType(final PlayerType type) throws Exception {
+        if (type == PlayerType.VIDEO) {
+            return;
+        }
+        if (type == PlayerType.POPUP) {
+            final Context context = instrumentation.getTargetContext();
+            savedPopupAppOp = context.getSystemService(AppOpsManager.class).checkOpNoThrow(
+                    AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW, context.getApplicationInfo().uid,
+                    context.getPackageName());
+            shell("appops set " + context.getPackageName() + " SYSTEM_ALERT_WINDOW allow");
+            assertTrue(Settings.canDrawOverlays(context));
+        }
+        instrumentation.runOnMainSync(() -> player.handleIntent(NavigationHelper.getPlayerIntent(
+                main, DeviceUtils.getPlayerServiceClass(), player.getPlayQueue(), false, true)
+                .putExtra(PlayerIntentConstants.PLAYER_TYPE, type.ordinal())));
+        await(() -> player.getPlayerType() == type
+                && player.simpleExoPlayer.getPlaybackState() == ExoPlayer.STATE_READY,
+                "Requested player type must prepare before timestamp navigation");
+    }
+
+    private void shell(final String command) throws Exception {
+        try (ParcelFileDescriptor descriptor = instrumentation.getUiAutomation()
+                .executeShellCommand(command);
+             InputStream output = new ParcelFileDescriptor.AutoCloseInputStream(descriptor)) {
+            final byte[] buffer = new byte[1024];
+            while (output.read(buffer) != -1) {
+                // Drain to wait for command completion; no device identifiers are logged.
+            }
+        }
     }
 
     private TextView descriptionTimestampView() {
@@ -664,7 +741,7 @@ public class PlayerBrowsingPlaybackTest {
     }
 
     @After
-    public void cleanUp() {
+    public void cleanUp() throws Exception {
         instrumentation.runOnMainSync(() -> {
             disposables.clear();
             if (startedPlayback) {
@@ -699,5 +776,10 @@ public class PlayerBrowsingPlaybackTest {
             }
         });
         instrumentation.waitForIdleSync();
+        if (savedPopupAppOp != -1) {
+            final String[] modes = {"allow", "ignore", "deny", "default", "foreground"};
+            shell("appops set " + instrumentation.getTargetContext().getPackageName()
+                    + " SYSTEM_ALERT_WINDOW " + modes[savedPopupAppOp]);
+        }
     }
 }

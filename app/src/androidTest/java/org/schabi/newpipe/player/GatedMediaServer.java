@@ -16,13 +16,19 @@ import java.util.concurrent.TimeUnit;
 /** A loopback media response gate: the real player buffers until the test releases the bytes. */
 final class GatedMediaServer implements AutoCloseable {
     private final byte[] media;
+    private final boolean live;
     private final ServerSocket server;
     private final ExecutorService requests = Executors.newCachedThreadPool();
     private final CountDownLatch requested = new CountDownLatch(1);
     private final CountDownLatch released = new CountDownLatch(1);
 
     GatedMediaServer(final byte[] media) throws IOException {
+        this(media, false);
+    }
+
+    GatedMediaServer(final byte[] media, final boolean live) throws IOException {
         this.media = media;
+        this.live = live;
         server = new ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"));
         requests.execute(() -> {
             while (!server.isClosed()) {
@@ -37,7 +43,7 @@ final class GatedMediaServer implements AutoCloseable {
     }
 
     String url() {
-        return "http://127.0.0.1:" + server.getLocalPort() + "/fixture.mp4";
+        return "http://127.0.0.1:" + server.getLocalPort() + (live ? "/fixture.m3u8" : "/fixture.mp4");
     }
 
     boolean awaitRequest() throws InterruptedException {
@@ -53,9 +59,14 @@ final class GatedMediaServer implements AutoCloseable {
             connection.setSoTimeout(10000);
             final BufferedReader reader = new BufferedReader(new InputStreamReader(
                     connection.getInputStream(), StandardCharsets.US_ASCII));
-            reader.readLine();
+            final String requestLine = reader.readLine();
+            final boolean playlist = live && requestLine.contains("/fixture.m3u8");
+            final byte[] content = playlist ? ("#EXTM3U\n#EXT-X-VERSION:3\n"
+                    + "#EXT-X-TARGETDURATION:30\n#EXT-X-MEDIA-SEQUENCE:0\n"
+                    + "#EXT-X-START:TIME-OFFSET=0,PRECISE=YES\n"
+                    + "#EXTINF:30,\nfixture.ts\n").getBytes(StandardCharsets.US_ASCII) : media;
             int first = 0;
-            int last = media.length - 1;
+            int last = content.length - 1;
             boolean range = false;
             String line;
             while ((line = reader.readLine()) != null && !line.isEmpty()) {
@@ -72,12 +83,13 @@ final class GatedMediaServer implements AutoCloseable {
             released.await();
             final OutputStream output = connection.getOutputStream();
             final String headers = "HTTP/1.1 " + (range ? "206 Partial Content" : "200 OK")
-                    + "\r\nContent-Type: video/mp4\r\nAccept-Ranges: bytes\r\n"
+                    + "\r\nContent-Type: " + (playlist ? "application/vnd.apple.mpegurl"
+                    : live ? "video/mp2t" : "video/mp4") + "\r\nAccept-Ranges: bytes\r\n"
                     + "Content-Length: " + (last - first + 1) + "\r\n"
                     + (range ? "Content-Range: bytes " + first + "-" + last + "/"
-                    + media.length + "\r\n" : "") + "Connection: close\r\n\r\n";
+                    + content.length + "\r\n" : "") + "Connection: close\r\n\r\n";
             output.write(headers.getBytes(StandardCharsets.US_ASCII));
-            output.write(media, first, last - first + 1);
+            output.write(content, first, last - first + 1);
         } catch (final IOException ignored) {
             // Mode changes cancel old loads; a disconnected request is expected.
         } catch (final InterruptedException interrupted) {

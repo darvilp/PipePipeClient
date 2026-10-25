@@ -61,7 +61,7 @@ class PlayerSourceController(private val player: Player) {
         player.trackSelector.setParameters(player.trackSelector.buildUponParameters()
             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !videoEnabled)
             .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !videoEnabled))
-        if (reload) {
+        if (reload && !player.isLiveIdle) {
             if (modeSwitch && playQueue.index == player.simpleExoPlayer.currentMediaItemIndex
                 && (player.currentItem == null || player.currentItem == playQueue.item)) {
                 modeSwitchRecoveryItem = playQueue.item

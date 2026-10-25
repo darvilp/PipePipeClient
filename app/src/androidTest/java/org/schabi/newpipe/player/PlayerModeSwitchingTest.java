@@ -3,6 +3,7 @@ package org.schabi.newpipe.player;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
@@ -89,6 +90,37 @@ public class PlayerModeSwitchingTest {
                     .putString(selectedTab, "DESCRIPTION")
                     .putBoolean(context.getString(R.string.start_main_player_fullscreen_key), false)
                     .commit();
+        });
+    }
+
+    @Test
+    public void pausedLiveSelectionAndModeSwitchKeepSourceReleasedUntilPlay() throws Exception {
+        start(PlayerType.AUDIO, false, false, false, false, true);
+        final Player original = activity.player;
+        final PlayQueue queue = original.getPlayQueue();
+        instrumentation.runOnMainSync(original::pause);
+        await(original::isLiveIdle, "Paused live source must enter idle");
+        instrumentation.runOnMainSync(() -> {
+            assertNull(field(original, "playQueueManager"));
+            original.selectQueueItem(queue.getItem(1));
+            assertFalse(original.getPlayWhenReady());
+            final Menu menu = new MenuBuilder(activity);
+            activity.onCreateOptionsMenu(menu);
+            activity.onOptionsItemSelected(menu.findItem(R.id.action_switch_popup));
+            assertEquals(PlayerType.POPUP, original.getPlayerType());
+            assertTrue(original.isLiveIdle());
+            assertFalse(original.getPlayWhenReady());
+            assertNull("A mode change must not resurrect a paused live source",
+                    field(original, "playQueueManager"));
+            original.play();
+        });
+        await(() -> original.simpleExoPlayer.getPlaybackState()
+                == com.google.android.exoplayer2.Player.STATE_READY
+                && original.getCurrentItem() == queue.getItem(1), "Selected live item resumes");
+        instrumentation.runOnMainSync(() -> {
+            assertFalse(original.isLiveIdle());
+            assertTrue(original.getPlayWhenReady());
+            assertNotNull(field(original, "playQueueManager"));
         });
     }
 
@@ -920,12 +952,23 @@ public class PlayerModeSwitchingTest {
     private void start(final PlayerType type, final boolean separateAudio,
                        final boolean bufferMedia, final boolean sabrAlternative,
                        final boolean qualityAlternative) throws Exception {
+        start(type, separateAudio, bufferMedia, sabrAlternative, qualityAlternative, false);
+    }
+
+    private void start(final PlayerType type, final boolean separateAudio,
+                       final boolean bufferMedia, final boolean sabrAlternative,
+                       final boolean qualityAlternative, final boolean live) throws Exception {
+        final StreamType streamType = live ? StreamType.LIVE_STREAM : StreamType.VIDEO_STREAM;
         final File media = copyAsset("player-mode-fixture.mp4");
         final File audio = separateAudio ? copyAsset("player-mode-fixture.m4a") : null;
-        if (bufferMedia) {
+        if (live) {
+            final File liveMedia = copyAsset("player-mode-live-fixture.ts");
+            mediaServer = new GatedMediaServer(java.nio.file.Files.readAllBytes(liveMedia.toPath()), true);
+            mediaServer.release();
+        } else if (bufferMedia) {
             mediaServer = new GatedMediaServer(java.nio.file.Files.readAllBytes(media.toPath()));
         }
-        final String mediaUrl = bufferMedia ? mediaServer.url() : Uri.fromFile(media).toString();
+        final String mediaUrl = bufferMedia || live ? mediaServer.url() : Uri.fromFile(media).toString();
         final String streamId = "fixture-" + System.nanoTime();
         launchMain();
         instrumentation.runOnMainSync(() -> {
@@ -934,7 +977,8 @@ public class PlayerModeSwitchingTest {
             for (final String url : Arrays.asList(first, second)) {
                 final StreamInfo info = new StreamInfo(0, url, url,
                         url.equals(first) ? "First fixture" : "Second fixture");
-                info.setStreamType(StreamType.VIDEO_STREAM);
+                info.setStreamType(streamType);
+                if (live) info.setHlsUrl(mediaUrl);
                 info.setDuration(30);
                 info.setDescription(Description.EMPTY_DESCRIPTION);
                 info.setUploaderName("Synthetic fixture");
@@ -968,10 +1012,10 @@ public class PlayerModeSwitchingTest {
                 InfoCache.getInstance().putInfo(0, url, info, InfoItem.InfoType.STREAM);
             }
             final PlayQueue queue = new SinglePlayQueue(Arrays.asList(
-                    new StreamInfoItem(0, first, "First", StreamType.VIDEO_STREAM),
-                    new StreamInfoItem(0, second, "Second", StreamType.VIDEO_STREAM)), 0);
+                    new StreamInfoItem(0, first, "First", streamType),
+                    new StreamInfoItem(0, second, "Second", streamType)), 0);
             ContextCompat.startForegroundService(main, NavigationHelper.getPlayerIntent(main,
-                    DeviceUtils.getPlayerServiceClass(), queue, false, false)
+                    DeviceUtils.getPlayerServiceClass(), queue, false, live)
                     .putExtra(PlayerIntentConstants.PLAYER_TYPE, type.ordinal()));
         });
         SystemClock.sleep(1000);

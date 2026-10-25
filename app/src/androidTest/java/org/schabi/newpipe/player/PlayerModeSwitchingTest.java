@@ -26,6 +26,8 @@ import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry;
 import androidx.test.runner.lifecycle.Stage;
 
+import com.google.android.exoplayer2.Timeline;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -44,6 +46,7 @@ import org.schabi.newpipe.extractor.stream.StreamType;
 import org.schabi.newpipe.extractor.stream.VideoStream;
 import org.schabi.newpipe.player.PlayerService.PlayerType;
 import org.schabi.newpipe.player.helper.PlayerHolder;
+import org.schabi.newpipe.player.mediaitem.PlayerMediaItem;
 import org.schabi.newpipe.player.playqueue.PlayQueue;
 import org.schabi.newpipe.player.playqueue.SinglePlayQueue;
 import org.schabi.newpipe.util.DeviceUtils;
@@ -126,40 +129,64 @@ public class PlayerModeSwitchingTest {
     }
 
     @Test
-    public void pausedLiveModeSwitchKeepsRecoveryUnsetUntilResume() throws Exception {
+    public void pausedLiveResumeUsesCurrentDefaultPosition() throws Exception {
+        checkPausedLiveResumeUsesCurrentDefaultPosition(false);
+    }
+
+    @Test
+    public void pausedLiveModeSwitchResumesAtCurrentDefaultPosition() throws Exception {
+        checkPausedLiveResumeUsesCurrentDefaultPosition(true);
+    }
+
+    private void checkPausedLiveResumeUsesCurrentDefaultPosition(final boolean switchMode)
+            throws Exception {
+        instrumentation.runOnMainSync(() -> {
+            final android.content.Context context = instrumentation.getTargetContext();
+            assertTrue(PreferenceManager.getDefaultSharedPreferences(context).edit()
+                    .putBoolean(context.getString(R.string.always_start_from_beginning_key), false)
+                    .commit());
+        });
         start(PlayerType.AUDIO, false, false, false, false, true);
         final Player original = activity.player;
         final PlayQueue queue = original.getPlayQueue();
-        await(() -> original.getCurrentPosition() >= 1000,
-                "Live playback must reach a nonzero position before pause");
+        final PlayerMediaItem selected = queue.getItem();
+        await(() -> original.getCurrentPosition() >= 4000,
+                "Live playback must reach four seconds before pause");
         instrumentation.runOnMainSync(original::pause);
         await(original::isLiveIdle, "Paused live source must enter idle");
         instrumentation.runOnMainSync(() -> {
-            assertEquals(PlayQueue.RECOVERY_UNSET, queue.getRecoveryPosition(queue.getItem()));
             assertNull(field(original, "playQueueManager"));
-            final Menu menu = new MenuBuilder(activity);
-            activity.onCreateOptionsMenu(menu);
-            activity.onOptionsItemSelected(menu.findItem(R.id.action_switch_popup));
-            assertEquals(PlayerType.POPUP, original.getPlayerType());
+            assertFalse(original.getPlayWhenReady());
+            if (switchMode) {
+                final Menu menu = new MenuBuilder(activity);
+                activity.onCreateOptionsMenu(menu);
+                activity.onOptionsItemSelected(menu.findItem(R.id.action_switch_popup));
+            }
+            assertEquals(switchMode ? PlayerType.POPUP : PlayerType.AUDIO,
+                    original.getPlayerType());
             assertSame(queue, original.getPlayQueue());
+            assertSame(selected, queue.getItem());
             assertEquals(0, queue.getIndex());
             assertTrue(original.isLiveIdle());
             assertFalse(original.getPlayWhenReady());
             assertNull("A mode change must not resurrect a paused live source",
                     field(original, "playQueueManager"));
-            assertEquals("Mode changes must not restore a discarded live position",
-                    PlayQueue.RECOVERY_UNSET, queue.getRecoveryPosition(queue.getItem()));
             original.play();
         });
         await(() -> original.simpleExoPlayer.getPlaybackState()
                 == com.google.android.exoplayer2.Player.STATE_READY
-                && original.getCurrentItem() == queue.getItem(), "Current live item resumes");
+                && original.getCurrentItem() == selected, "Current live item resumes");
         instrumentation.runOnMainSync(() -> {
             assertFalse(original.isLiveIdle());
             assertTrue(original.getPlayWhenReady());
             assertNotNull(field(original, "playQueueManager"));
-            assertTrue("Fixture live default must resume near zero",
-                    original.getCurrentPosition() < 1000);
+            assertSame(queue, original.getPlayQueue());
+            assertSame(selected, queue.getItem());
+            final Timeline.Window window = new Timeline.Window();
+            original.simpleExoPlayer.getCurrentTimeline().getWindow(
+                    original.simpleExoPlayer.getCurrentMediaItemIndex(), window);
+            assertEquals("Live playback must resume at the current default position",
+                    window.getDefaultPositionMs(), original.getCurrentPosition(), 750);
         });
     }
 

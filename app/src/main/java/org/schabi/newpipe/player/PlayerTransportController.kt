@@ -269,7 +269,7 @@ class PlayerTransportController(private val player: Player) {
             }
 
             if (playQueue.getRecoveryPosition(item) != PlayQueue.RECOVERY_UNSET
-                && (player.shouldSeek() || item == player.sourceController.modeSwitchRecoveryItem)
+                && (player.shouldSeek() || item == player.sourceController.sourceSwitchRecoveryItem)
             ) {
                 player.simpleExoPlayer.seekTo(
                     currentPlayQueueIndex, playQueue.getRecoveryPosition(item)
@@ -279,7 +279,7 @@ class PlayerTransportController(private val player: Player) {
                 player.simpleExoPlayer.seekToDefaultPosition(currentPlayQueueIndex)
             }
         }
-        player.sourceController.modeSwitchRecoveryItem = null
+        player.sourceController.sourceSwitchRecoveryItem = null
     }
 
     /**

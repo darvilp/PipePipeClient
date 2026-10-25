@@ -1254,7 +1254,7 @@ public final class Player {
         final long recoveryPosition = playQueue == null
                 ? PlayQueue.RECOVERY_UNSET : playQueue.getRecoveryPosition(item);
         final long initialPositionMs = (shouldSeek()
-                || item.equals(sourceController.getModeSwitchRecoveryItem()))
+                || item.equals(sourceController.getSourceSwitchRecoveryItem()))
                 && recoveryPosition != PlayQueue.RECOVERY_UNSET
                 ? recoveryPosition : 0;
         return sourceResolver.resolve(playerType, isAudioOnly, info, initialPositionMs,

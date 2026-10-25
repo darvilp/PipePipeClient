@@ -15,134 +15,59 @@
         android:layout_marginEnd="16dp"
         android:orientation="vertical">
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:layout_marginBottom="16dp">
-
-            <org.schabi.newpipe.views.NewPipeTextView
-                android:id="@+id/sponsor_block_controls_mark_segment_start"
-                android:layout_width="0dp"
-                android:layout_height="@dimen/detail_control_height"
-                android:layout_weight="1.4"
-                android:layout_gravity="center_vertical"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:clickable="true"
-                android:contentDescription="@string/sponsor_block_mark_the_start_of_a_segment"
-                android:drawableTop="@drawable/ic_chevron_right"
-                android:focusable="true"
-                android:gravity="center"
-                android:paddingVertical="@dimen/detail_control_padding"
-                android:text="@string/start"
-                android:textSize="@dimen/detail_control_text_size" />
-
-            <Space
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="0.4">
-            </Space>
-
-            <org.schabi.newpipe.views.NewPipeTextView
-                android:id="@+id/sponsor_block_controls_mark_segment_end"
-                android:layout_width="0dp"
-                android:layout_height="@dimen/detail_control_height"
-                android:layout_weight="1.4"
-                android:layout_gravity="center_vertical"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:clickable="true"
-                android:contentDescription="@string/sponsor_block_mark_the_end_of_a_segment"
-                android:drawableTop="@drawable/ic_chevron_left"
-                android:focusable="true"
-                android:gravity="center"
-                android:paddingVertical="@dimen/detail_control_padding"
-                android:text="@string/end"
-                android:textSize="@dimen/detail_control_text_size" />
-
-            <Space
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="0.4" >
-            </Space>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="5"
-                android:layout_gravity="center"
-                android:gravity="center_horizontal">
-                <TextView
-                    android:id="@+id/sponsor_block_controls_segment_start"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:background="?android:attr/selectableItemBackground"
-                    android:textAlignment="center"
-                    android:text="00:00:00"
-                    tools:ignore="HardcodedText" />
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:layout_marginEnd="4dp"
-                    android:textAlignment="center"
-                    android:text="-"
-                    tools:ignore="HardcodedText" />
-                <TextView
-                    android:id="@+id/sponsor_block_controls_segment_end"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:background="?android:attr/selectableItemBackground"
-                    android:textAlignment="center"
-                    android:text="00:00:00"
-                    tools:ignore="HardcodedText" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="@string/sponsor_block_select_a_category" android:labelFor="@id/segment_category" />
+        <Spinner android:id="@+id/segment_category" android:layout_width="match_parent"
+            android:layout_height="48dp" android:contentDescription="@string/sponsor_block_select_a_category" />
+        <LinearLayout android:id="@+id/start_row" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/start" android:labelFor="@id/sponsor_block_controls_segment_start" />
+            <Button style="?android:attr/buttonBarButtonStyle" android:id="@+id/sponsor_block_controls_segment_start"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:minHeight="48dp" android:text="@string/sponsor_block_time_unset" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <Button style="?android:attr/buttonBarButtonStyle" android:id="@+id/sponsor_block_controls_mark_segment_start"
+                    android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+                    android:minHeight="48dp" android:text="@string/sponsor_block_use_position" />
+                <Button style="?android:attr/buttonBarButtonStyle" android:id="@+id/jump_start" android:layout_width="0dp"
+                    android:layout_weight="1" android:layout_height="wrap_content" android:minHeight="48dp"
+                    android:text="@string/sponsor_block_jump_here" />
             </LinearLayout>
-
-            <Space
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="0.4" >
-            </Space>
-
-            <org.schabi.newpipe.views.NewPipeTextView
-                android:id="@+id/sponsor_block_controls_clear_segment"
-                android:layout_width="0dp"
-                android:layout_height="@dimen/detail_control_height"
-                android:layout_weight="1.4"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:clickable="true"
-                android:contentDescription="@string/sponsor_block_clear_segment"
-                android:drawableTop="@drawable/ic_delete"
-                android:focusable="true"
-                android:gravity="center"
-                android:paddingVertical="@dimen/detail_control_padding"
-                android:text="@string/clear"
-                android:textSize="@dimen/detail_control_text_size" />
-
-            <Space
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="0.4">
-            </Space>
-
-            <org.schabi.newpipe.views.NewPipeTextView
-                android:id="@+id/sponsor_block_controls_submit_segment"
-                android:layout_width="0dp"
-                android:layout_height="@dimen/detail_control_height"
-                android:layout_weight="1.4"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:clickable="true"
-                android:contentDescription="@string/sponsor_block_submit_segment"
-                android:drawableTop="@drawable/ic_upload"
-                android:focusable="true"
-                android:gravity="center"
-                android:paddingVertical="@dimen/detail_control_padding"
-                android:text="@string/submit"
-                android:textSize="@dimen/detail_control_text_size" />
-
+        </LinearLayout>
+        <LinearLayout android:id="@+id/end_row" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/end" android:labelFor="@id/sponsor_block_controls_segment_end" />
+            <Button style="?android:attr/buttonBarButtonStyle" android:id="@+id/sponsor_block_controls_segment_end"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:minHeight="48dp" android:text="@string/sponsor_block_time_unset" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <Button style="?android:attr/buttonBarButtonStyle" android:id="@+id/sponsor_block_controls_mark_segment_end"
+                    android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+                    android:minHeight="48dp" android:text="@string/sponsor_block_use_position" />
+                <Button style="?android:attr/buttonBarButtonStyle" android:id="@+id/jump_end" android:layout_width="0dp"
+                    android:layout_weight="1" android:layout_height="wrap_content" android:minHeight="48dp"
+                    android:text="@string/sponsor_block_jump_here" />
+            </LinearLayout>
+        </LinearLayout>
+        <TextView android:id="@+id/segment_duration" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:accessibilityLiveRegion="polite" />
+        <TextView android:id="@+id/segment_error" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:accessibilityLiveRegion="polite" />
+        <TextView android:id="@+id/queue_hold_status" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="@string/sponsor_block_queue_hold"
+            android:accessibilityLiveRegion="polite" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <Button style="?android:attr/buttonBarButtonStyle" android:id="@+id/sponsor_block_controls_clear_segment" android:layout_width="0dp"
+                android:layout_weight="1" android:layout_height="wrap_content" android:minHeight="48dp"
+                android:text="@string/clear" />
+            <Button style="?android:attr/buttonBarButtonStyle" android:id="@+id/sponsor_block_controls_submit_segment" android:layout_width="0dp"
+                android:layout_weight="1" android:layout_height="wrap_content" android:minHeight="48dp"
+                android:text="@string/submit" />
         </LinearLayout>
 
         <View

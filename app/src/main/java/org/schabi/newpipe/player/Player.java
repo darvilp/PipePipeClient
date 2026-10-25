@@ -578,6 +578,10 @@ public final class Player {
             return;
         }
 
+        final PlayerMediaItem selected = playQueue == null ? null : playQueue.getItem();
+        if (selected != null && StreamTypeUtil.isLiveStream(selected.getStreamType())) {
+            playQueue.unsetRecovery(playQueue.getIndex());
+        }
         liveIdle = false;
         reloadPlayQueueManager();
     }

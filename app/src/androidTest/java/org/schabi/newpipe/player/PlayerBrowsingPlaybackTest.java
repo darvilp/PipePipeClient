@@ -16,6 +16,12 @@ import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.SystemClock;
+import android.text.Spanned;
+import android.text.style.ClickableSpan;
+import android.text.style.URLSpan;
+import android.view.MotionEvent;
+import android.view.View;
+import android.widget.FrameLayout;
 import android.support.v4.media.session.MediaSessionCompat;
 import android.widget.TextView;
 
@@ -34,6 +40,7 @@ import org.junit.runner.RunWith;
 import org.schabi.newpipe.MainActivity;
 import org.schabi.newpipe.R;
 import org.schabi.newpipe.extractor.InfoItem;
+import org.schabi.newpipe.extractor.comments.CommentsInfoItem;
 import org.schabi.newpipe.extractor.MediaFormat;
 import org.schabi.newpipe.extractor.stream.AudioStream;
 import org.schabi.newpipe.extractor.stream.DeliveryMethod;
@@ -42,6 +49,8 @@ import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.schabi.newpipe.extractor.stream.StreamType;
 import org.schabi.newpipe.extractor.stream.VideoStream;
 import org.schabi.newpipe.fragments.detail.VideoDetailFragment;
+import org.schabi.newpipe.info_list.InfoItemBuilder;
+import org.schabi.newpipe.info_list.holder.CommentsMiniInfoItemHolder;
 import org.schabi.newpipe.player.helper.PlayerHolder;
 import org.schabi.newpipe.player.mediaitem.ExoMediaItems;
 import org.schabi.newpipe.player.mediaitem.PlayerMediaItem;
@@ -52,6 +61,7 @@ import org.schabi.newpipe.player.resolver.VideoPlaybackResolver.SourceType;
 import org.schabi.newpipe.settings.tabs.Tab;
 import org.schabi.newpipe.settings.tabs.TabsJsonHelper;
 import org.schabi.newpipe.util.DeviceUtils;
+import org.schabi.newpipe.util.CommentTextOnTouchListener;
 import org.schabi.newpipe.util.InfoCache;
 import org.schabi.newpipe.util.NavigationHelper;
 import org.schabi.newpipe.util.external_communication.InternalUrlsHandler;
@@ -163,6 +173,94 @@ public class PlayerBrowsingPlaybackTest {
             assertEquals(1, queue.getIndex());
             assertEquals("Play now must preserve the requested timestamp", 5000,
                     player.getCurrentPosition(), 1000);
+        });
+    }
+
+    @Test
+    public void descriptionTimestampTargetsBrowsedVideo() throws Exception {
+        browseTimestampedVideo();
+        await(() -> descriptionTimestampView() != null
+                && descriptionTimestampView().getText() instanceof Spanned
+                && ((Spanned) descriptionTimestampView().getText()).getSpans(0,
+                        descriptionTimestampView().length(), ClickableSpan.class).length > 0,
+                "Browsed description must contain its real timestamp link");
+        instrumentation.runOnMainSync(() -> {
+            final TextView text = descriptionTimestampView();
+            final Spanned spans = (Spanned) text.getText();
+            spans.getSpans(0, spans.length(), ClickableSpan.class)[0].onClick(text);
+        });
+        assertTimestampTargetsBrowsedVideo("Description timestamps must target displayed video");
+    }
+
+    @Test
+    public void commentTimestampTargetsBrowsedVideo() throws Exception {
+        browseTimestampedVideo();
+        final TextView[] text = new TextView[1];
+        instrumentation.runOnMainSync(() -> {
+            final CommentsInfoItem comment = new CommentsInfoItem(0, OTHER_URL, "Fixture comment");
+            comment.setUploaderName("Fixture author");
+            comment.setCommentText(new Description("0:12 jump", Description.PLAIN_TEXT));
+            final CommentsMiniInfoItemHolder holder = new CommentsMiniInfoItemHolder(
+                    new InfoItemBuilder(main), new FrameLayout(main));
+            holder.updateFromItem(comment, null);
+            text[0] = holder.itemView.findViewById(R.id.itemCommentContentView);
+        });
+        await(() -> text[0].getUrls().length > 0, "Comment holder must generate its timestamp link");
+        instrumentation.runOnMainSync(() -> {
+            final TextView view = text[0];
+            view.measure(View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.AT_MOST));
+            view.layout(0, 0, view.getMeasuredWidth(), view.getMeasuredHeight());
+            final Spanned spans = (Spanned) view.getText();
+            final URLSpan link = view.getUrls()[0];
+            final int offset = spans.getSpanStart(link);
+            final int line = view.getLayout().getLineForOffset(offset);
+            final float x = view.getTotalPaddingLeft()
+                    + view.getLayout().getPrimaryHorizontal(offset) + 2;
+            final float y = view.getTotalPaddingTop() + view.getLayout().getLineTop(line) + 2;
+            final long now = SystemClock.uptimeMillis();
+            final MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0);
+            final MotionEvent up = MotionEvent.obtain(now, now + 50, MotionEvent.ACTION_UP, x, y, 0);
+            try {
+                assertTrue(CommentTextOnTouchListener.INSTANCE.onTouch(view, down));
+                assertTrue(CommentTextOnTouchListener.INSTANCE.onTouch(view, up));
+            } finally {
+                down.recycle();
+                up.recycle();
+            }
+        });
+        assertTimestampTargetsBrowsedVideo("Comment timestamps must target displayed video");
+    }
+
+    private void browseTimestampedVideo() throws Exception {
+        start(false);
+        instrumentation.runOnMainSync(() -> {
+            assertTrue(PreferenceManager.getDefaultSharedPreferences(main).edit()
+                    .putString(main.getString(R.string.autoplay_key),
+                            main.getString(R.string.autoplay_never_key)).commit());
+            fixtureMetadata.get(OTHER_URL).setDescription(
+                    new Description("0:12 jump", Description.PLAIN_TEXT));
+            cacheFixtureMetadata();
+            NavigationHelper.openVideoDetailFragment(main, main.getSupportFragmentManager(),
+                    0, OTHER_URL, "Other browsing fixture", null, false);
+        });
+        await(() -> detailsShow("Other browsing fixture") && player.isAudioOnly()
+                && player.simpleExoPlayer.getPlaybackState() == ExoPlayer.STATE_READY,
+                "Browse another video while the original keeps playing");
+    }
+
+    private TextView descriptionTimestampView() {
+        return main.findViewById(R.id.detail_description_view);
+    }
+
+    private void assertTimestampTargetsBrowsedVideo(final String message) {
+        await(() -> player.simpleExoPlayer.getPlaybackState() == ExoPlayer.STATE_READY
+                && Math.abs(player.getCurrentPosition() - 12000) < 1000,
+                "Timestamp click must prepare playback near twelve seconds");
+        instrumentation.runOnMainSync(() -> {
+            player.pause();
+            assertEquals(message, OTHER_URL, player.getPlayQueue().getItem().getUrl());
+            assertEquals(12000, player.getCurrentPosition(), 1000);
         });
     }
 

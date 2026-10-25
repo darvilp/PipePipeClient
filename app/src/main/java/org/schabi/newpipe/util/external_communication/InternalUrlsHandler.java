@@ -239,7 +239,10 @@ public final class InternalUrlsHandler {
                 .subscribe(info -> {
                     final PlayQueue playQueue
                             = new SinglePlayQueue(info, seconds * 1000L);
-                    if (player != null && player.videoPlayerSelected()) {
+                    if (player != null && player.videoPlayerSelected()
+                            && player.getPlayQueue() != null
+                            && player.getPlayQueue().getItem() != null
+                            && !cleanUrl.equals(player.getPlayQueue().getItem().getUrl())) {
                         ContextCompat.startForegroundService(context,
                                 NavigationHelper.getPlayerIntent(context,
                                         DeviceUtils.getPlayerServiceClass(), playQueue,

@@ -138,6 +138,8 @@ class FeedRefreshRenderingTest {
                     .commitNow()
                 val model = field(fragment, "viewModel") as FeedViewModel
                 model.stateLiveData.removeObservers(fragment.viewLifecycleOwner)
+                // Database emissions must not replace the states injected by this rendering fixture.
+                fragment.viewModelStore.clear()
             }
             check(scenario, fragment)
         }

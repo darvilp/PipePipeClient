@@ -410,16 +410,24 @@ public class PlayerBrowsingPlaybackTest {
 
     @Test
     public void timestampDuringReturnSourceReloadWinsOverCapturedRecovery() throws Exception {
-        checkTimestampDuringReturnSourceReload(false);
+        checkTimestampDuringReturnSourceReload(false, 5);
     }
 
     @Test
     public void plainTimestampDuringReturnSourceReloadWinsOverCapturedRecovery() throws Exception {
-        checkTimestampDuringReturnSourceReload(true);
+        checkTimestampDuringReturnSourceReload(true, 5);
     }
 
-    private void checkTimestampDuringReturnSourceReload(final boolean plainTimestamp)
+    @Test
+    public void plainZeroTimestampDuringReturnSourceReloadWinsOverCapturedRecovery()
             throws Exception {
+        checkTimestampDuringReturnSourceReload(true, 0);
+    }
+
+    private void checkTimestampDuringReturnSourceReload(final boolean plainTimestamp,
+                                                        final int targetSeconds)
+            throws Exception {
+        final long targetPositionMs = targetSeconds * 1000L;
         start(false);
         final PlayQueue queue = player.getPlayQueue();
         final ExoPlayer engine = player.simpleExoPlayer;
@@ -480,7 +488,7 @@ public class PlayerBrowsingPlaybackTest {
                         final com.google.android.exoplayer2.Player.PositionInfo next,
                         final int reason) {
                     if (reason == com.google.android.exoplayer2.Player.DISCONTINUITY_REASON_SEEK
-                            && next.positionMs == 5000) {
+                            && next.positionMs == targetPositionMs) {
                         timestampSeek[0] = true;
                     }
                 }
@@ -503,14 +511,15 @@ public class PlayerBrowsingPlaybackTest {
             cacheFixtureMetadata();
             if (plainTimestamp) {
                 assertTrue(InternalUrlsHandler.handleUrlCommentsTimestamp(disposables,
-                        main, CURRENT_URL + "#timestamp=5"));
+                        main, CURRENT_URL + "#timestamp=" + targetSeconds));
             } else {
                 assertTrue(InternalUrlsHandler.handleUrlDescriptionTimestamp(disposables,
-                        main, CURRENT_URL + "&t=5"));
+                        main, CURRENT_URL + "&t=" + targetSeconds));
             }
         });
-        await(() -> timestampSeek[0] && Math.abs(engine.getCurrentPosition() - 5000) < 500,
-                "Timestamp must seek to five seconds while return metadata is held");
+        await(() -> timestampSeek[0]
+                && Math.abs(engine.getCurrentPosition() - targetPositionMs) < 500,
+                "Timestamp must seek to " + targetSeconds + " seconds while return metadata is held");
         instrumentation.runOnMainSync(() -> {
             assertFalse(metadataGate.hasValue());
             assertSame(returnManager[0], sourceManager());
@@ -537,7 +546,7 @@ public class PlayerBrowsingPlaybackTest {
             instrumentation.sendStatus(0, recoveryEvidence);
             assertEquals("Explicit timestamp must survive delayed return-source synchronization: "
                             + recoveryEvidence,
-                    5000, engine.getCurrentPosition(), 750);
+                    targetPositionMs, engine.getCurrentPosition(), 750);
         });
     }
 

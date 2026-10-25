@@ -98,6 +98,7 @@ class PlayerStartController(private val player: Player) {
             cancelModeRequest()
             player.saveStreamProgressState()
             activeQueue.insertNextAndSelect(itemToPlay)
+            activeQueue.setRecovery(activeQueue.index, newQueue.getRecoveryPosition(itemToPlay))
             player.notifyQueueUpdateToListeners()
             player.play()
             return

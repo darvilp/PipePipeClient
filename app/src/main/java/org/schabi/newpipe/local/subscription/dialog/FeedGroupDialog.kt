@@ -60,12 +60,12 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
     private var groupSortOrder: Long = -1
 
     sealed class ScreenState : Serializable {
-        object InitialScreen : ScreenState()
-        object IconPickerScreen : ScreenState()
-        object SubscriptionsPickerScreen : ScreenState()
-        object ContentRulesScreen : ScreenState()
-        object ContentRuleSubscriptionsScreen : ScreenState()
-        object DeleteScreen : ScreenState()
+        data object InitialScreen : ScreenState()
+        data object IconPickerScreen : ScreenState()
+        data object SubscriptionsPickerScreen : ScreenState()
+        data object ContentRulesScreen : ScreenState()
+        data object ContentRuleSubscriptionsScreen : ScreenState()
+        data object DeleteScreen : ScreenState()
     }
 
     @JvmField var selectedIcon: FeedGroupIcon? = null

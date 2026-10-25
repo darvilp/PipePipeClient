@@ -15,6 +15,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.xwray.groupie.OnItemClickListener
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -186,6 +187,106 @@ class FeedGroupDraftContentRulesTest {
                     database.feedGroupDAO().getSubscriptionsForGroup(groupId)
                         .firstOrError().blockingGet().single().contentSelectionOverride
                 )
+            }
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun membershipRemoveAndReaddPreservesExceptionWithoutSearchDelivery() {
+        assertMembershipRemoveAndReaddPreservesException(deliverSearchResult = false)
+    }
+
+    @Test
+    fun membershipRemoveAndReaddPreservesExceptionWithSearchDelivery() {
+        assertMembershipRemoveAndReaddPreservesException(deliverSearchResult = true)
+    }
+
+    private fun assertMembershipRemoveAndReaddPreservesException(deliverSearchResult: Boolean) {
+        val database = Room.inMemoryDatabaseBuilder(
+            ApplicationProvider.getApplicationContext<Context>(), AppDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val groupId = 424244L
+            val subscriptions = listOf(42L, 43L).map { id ->
+                SubscriptionEntity().apply {
+                    uid = id
+                    serviceId = 0
+                    url = "https://example.invalid/channel/$id"
+                    name = "Channel $id"
+                }
+            }
+            subscriptions.forEach { database.subscriptionDAO().insert(it) }
+            database.feedGroupDAO().insert(FeedGroupEntity(
+                groupId, "Membership rules", FeedGroupIcon.ALL,
+                contentSelection = FeedContentSelection.VIDEOS
+            ))
+            database.feedGroupDAO().insertSubscriptionsToGroup(listOf(
+                FeedGroupSubscriptionEntity(groupId, 42L, FeedContentSelection.LIVE),
+                FeedGroupSubscriptionEntity(groupId, 43L)
+            ))
+            val group = database.feedGroupDAO().getGroup(groupId).blockingGet()
+            val memberships = database.feedGroupDAO().getSubscriptionsForGroup(groupId)
+                .firstOrError().blockingGet()
+            val submittedName = "Saved membership rules"
+
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { activity ->
+                    val dialog = FeedGroupDialog.newInstance(groupId)
+                    dialog.showNow(activity.supportFragmentManager, "membership-rule-toggle")
+                    val model = FeedGroupDialog::class.java.getDeclaredField("viewModel")
+                        .apply { isAccessible = true }.get(dialog) as FeedGroupDialogViewModel
+                    model.groupLiveData.removeObservers(dialog.viewLifecycleOwner)
+                    model.subscriptionsLiveData.removeObservers(dialog.viewLifecycleOwner)
+                    FeedGroupDialogViewModel::class.java.getDeclaredField("feedDatabaseManager")
+                        .apply { isAccessible = true }.set(model, FeedDatabaseManager(database))
+                    FeedGroupDialog::class.java.getDeclaredMethod(
+                        "handleGroup", FeedGroupEntity::class.java
+                    ).apply { isAccessible = true }.invoke(dialog, group)
+                    val deliverSubscriptions = FeedGroupDialog::class.java.getDeclaredMethod(
+                        "setupSubscriptionPicker", List::class.java, List::class.java, List::class.java
+                    ).apply { isAccessible = true }
+                    val pickerItems = subscriptions.map { PickerSubscriptionItem(it) }
+                    deliverSubscriptions.invoke(dialog, pickerItems, pickerItems, memberships)
+                    dialog.requireView().findViewById<View>(R.id.select_channel_button).performClick()
+
+                    val listener = FeedGroupDialog::class.java
+                        .getDeclaredField("subscriptionPickerItemListener")
+                        .apply { isAccessible = true }.get(dialog) as OnItemClickListener
+                    val itemView = activity.layoutInflater.inflate(
+                        R.layout.picker_subscription_item, null, false
+                    )
+                    listener.onItemClick(pickerItems[0], itemView)
+                    assertEquals(setOf(43L), dialog.selectedSubscriptions)
+                    if (deliverSearchResult) {
+                        // A search emits the saved memberships alongside the new picker results.
+                        deliverSubscriptions.invoke(dialog, pickerItems, pickerItems, memberships)
+                    }
+                    listener.onItemClick(pickerItems[0], itemView)
+                    assertEquals(setOf(42L, 43L), dialog.selectedSubscriptions)
+
+                    val confirm = dialog.requireView().findViewById<View>(R.id.confirm_button)
+                    confirm.performClick()
+                    dialog.requireView().findViewById<android.widget.EditText>(R.id.group_name_input)
+                        .setText(submittedName)
+                    confirm.performClick()
+                }
+
+                val deadline = SystemClock.uptimeMillis() + 5000
+                var savedName: String?
+                do {
+                    savedName = database.feedGroupDAO().getGroup(groupId).blockingGet()?.name
+                    if (savedName == submittedName) break
+                    SystemClock.sleep(20)
+                } while (SystemClock.uptimeMillis() < deadline)
+                assertEquals("The real dialog save must complete", submittedName, savedName)
+                val savedMemberships = database.feedGroupDAO().getSubscriptionsForGroup(groupId)
+                    .firstOrError().blockingGet()
+                assertEquals(setOf(42L, 43L), savedMemberships.map { it.subscriptionId }.toSet())
+                assertEquals("Temporary membership changes must preserve the channel exception; " +
+                    "search delivery=$deliverSearchResult", FeedContentSelection.LIVE,
+                    savedMemberships.single { it.subscriptionId == 42L }.contentSelectionOverride)
             }
         } finally {
             database.close()

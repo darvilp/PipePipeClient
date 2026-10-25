@@ -45,6 +45,8 @@ import org.schabi.newpipe.player.helper.PlayerHolder;
 import org.schabi.newpipe.player.playqueue.PlayQueue;
 import org.schabi.newpipe.player.playqueue.SinglePlayQueue;
 import org.schabi.newpipe.player.resolver.VideoPlaybackResolver.SourceType;
+import org.schabi.newpipe.settings.tabs.Tab;
+import org.schabi.newpipe.settings.tabs.TabsJsonHelper;
 import org.schabi.newpipe.util.DeviceUtils;
 import org.schabi.newpipe.util.InfoCache;
 import org.schabi.newpipe.util.NavigationHelper;
@@ -70,6 +72,7 @@ public class PlayerBrowsingPlaybackTest {
     private static final String OTHER_URL = "https://www.youtube.com/watch?v=brwtest0002";
     private final Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
     private final Map<String, Object> savedPreferences = new HashMap<>();
+    private final Map<String, StreamInfo> fixtureMetadata = new HashMap<>();
     private final CompositeDisposable disposables = new CompositeDisposable();
     private MainActivity main;
     private Player player;
@@ -95,7 +98,7 @@ public class PlayerBrowsingPlaybackTest {
                     R.string.enable_watch_history_key, R.string.enable_playback_resume_key,
                     R.string.video_tabs_key, R.string.stream_info_selected_tab_key,
                     R.string.always_start_from_beginning_key, R.string.autoplay_key,
-                    R.string.start_main_player_fullscreen_key}) {
+                    R.string.start_main_player_fullscreen_key, R.string.saved_tabs_key}) {
                 savedPreferences.put(context.getString(key), preferences.getAll()
                         .get(context.getString(key)));
             }
@@ -111,6 +114,10 @@ public class PlayerBrowsingPlaybackTest {
                             "DESCRIPTION")
                     .putString(context.getString(R.string.autoplay_key),
                             context.getString(R.string.autoplay_always_key))
+                    // Offline kiosk failures clear the shared metadata cache.
+                    .putString(context.getString(R.string.saved_tabs_key),
+                            TabsJsonHelper.getJsonToSave(Collections.singletonList(
+                                    Tab.Type.BLANK.getTab())))
                     .putBoolean(context.getString(R.string.start_main_player_fullscreen_key), false)
                     .commit());
         });
@@ -162,6 +169,7 @@ public class PlayerBrowsingPlaybackTest {
             assertTrue("Same-item queue equality alone cannot identify a timestamp request",
                     queue.equals(new SinglePlayQueue(player.getCurrentStreamInfo().get(),
                             seconds * 1000L)));
+            cacheFixtureMetadata();
             assertTrue(InternalUrlsHandler.handleUrlDescriptionTimestamp(disposables,
                     main, CURRENT_URL + "&t=" + seconds));
         });
@@ -207,6 +215,7 @@ public class PlayerBrowsingPlaybackTest {
         instrumentation.runOnMainSync(() -> {
             before[0] = player.getCurrentPosition();
             before[1] = SystemClock.elapsedRealtime();
+            cacheFixtureMetadata();
             NavigationHelper.openVideoDetailFragment(main, main.getSupportFragmentManager(),
                     0, OTHER_URL, "Other browsing fixture", null, false);
             assertNotSame("Embedded audio plus a separate M4A must reload for browsing",
@@ -226,6 +235,7 @@ public class PlayerBrowsingPlaybackTest {
         instrumentation.runOnMainSync(() -> {
             before[0] = player.getCurrentPosition();
             before[1] = SystemClock.elapsedRealtime();
+            cacheFixtureMetadata();
             NavigationHelper.openVideoDetailFragment(main, main.getSupportFragmentManager(),
                     0, CURRENT_URL, "Current browsing fixture", null, false);
         });
@@ -280,7 +290,7 @@ public class PlayerBrowsingPlaybackTest {
                 info.setAudioStreams(Collections.singletonList(new AudioStream.Builder()
                         .setId("browsing-audio").setContent(audio, true)
                         .setMediaFormat(MediaFormat.M4A).setAverageBitrate(96).build()));
-                InfoCache.getInstance().putInfo(0, url, info, InfoItem.InfoType.STREAM);
+                fixtureMetadata.put(url, info);
             }
         });
         main = (MainActivity) instrumentation.startActivitySync(new Intent(
@@ -288,8 +298,9 @@ public class PlayerBrowsingPlaybackTest {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         instrumentation.runOnMainSync(() -> {
             startedPlayback = true;
-            NavigationHelper.playOnMainPlayer(main, new SinglePlayQueue((StreamInfo)
-                    InfoCache.getInstance().getFromKey(0, CURRENT_URL, InfoItem.InfoType.STREAM)));
+            cacheFixtureMetadata();
+            NavigationHelper.playOnMainPlayer(main,
+                    new SinglePlayQueue(fixtureMetadata.get(CURRENT_URL)));
         });
         await(() -> {
             player = PlayerHolder.getInstance().getPlayer();
@@ -304,6 +315,16 @@ public class PlayerBrowsingPlaybackTest {
                     player.getRootView().getParent());
             player.simpleExoPlayer.setVolume(0f);
         });
+    }
+
+    private void cacheFixtureMetadata() {
+        for (final Map.Entry<String, StreamInfo> entry : fixtureMetadata.entrySet()) {
+            InfoCache.getInstance().putInfo(0, entry.getKey(), entry.getValue(),
+                    InfoItem.InfoType.STREAM);
+            assertSame("Fixture metadata must survive through navigation and source reload",
+                    entry.getValue(), InfoCache.getInstance().getFromKey(0, entry.getKey(),
+                            InfoItem.InfoType.STREAM));
+        }
     }
 
     private boolean detailsShow(final String title) {
@@ -359,7 +380,11 @@ public class PlayerBrowsingPlaybackTest {
                     + ", engineState=" + (engine == null ? null : engine.getPlaybackState())
                     + ", position=" + (engine == null ? null : engine.getCurrentPosition())
                     + ", playWhenReady=" + (engine == null ? null : engine.getPlayWhenReady())
-                    + ", manager=" + (player == null ? null : sourceManager());
+                    + ", manager=" + (player == null ? null : sourceManager())
+                    + ", cachedCurrent=" + (InfoCache.getInstance().getFromKey(0,
+                            CURRENT_URL, InfoItem.InfoType.STREAM) != null)
+                    + ", cachedOther=" + (InfoCache.getInstance().getFromKey(0,
+                            OTHER_URL, InfoItem.InfoType.STREAM) != null);
         });
         throw new AssertionError(message + " [" + state[0] + "]");
     }

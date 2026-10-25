@@ -92,6 +92,9 @@ public class SponsorBlockSheetVisibilityTest {
                 final StreamInfoItem item = new StreamInfoItem(
                         0, url, "Sheet fixture", StreamType.VIDEO_STREAM);
                 item.setUploaderName("Synthetic fixture");
+                item.setUploaderUrl("https://www.youtube.com/@SyntheticFixture");
+                item.setThumbnailUrl("");
+                item.setDuration(60);
                 final SinglePlayQueue queue = new SinglePlayQueue(item);
                 queue.init();
                 set(Player.class, player, "playQueue", queue);
@@ -105,6 +108,9 @@ public class SponsorBlockSheetVisibilityTest {
                 final StreamInfo info = new StreamInfo(0, url, url, "Sheet fixture");
                 info.setStreamType(StreamType.VIDEO_STREAM);
                 info.setDuration(60);
+                info.setUploaderName("Synthetic fixture");
+                info.setUploaderUrl("https://www.youtube.com/@SyntheticFixture");
+                info.setThumbnailUrl("");
                 set(VideoDetailFragment.class, parent, "currentInfo", info);
                 final SponsorBlockFragment child = new SponsorBlockFragment(info);
                 child.setListener(new SponsorBlockFragmentListener() {

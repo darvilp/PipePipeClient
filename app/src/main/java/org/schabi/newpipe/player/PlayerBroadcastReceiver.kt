@@ -92,13 +92,14 @@ class PlayerBroadcastReceiver(private val player: Player) {
                     .createNotificationIfNeededAndUpdate(player, true)
             VideoDetailFragment.ACTION_SEEK_TO -> {
                 player.seekTo(intent.getIntExtra("Timestamp", 0) * 1000L)
+                player.setRecovery()
                 if (player.progressController.wasPlaying) {
                     player.simpleExoPlayer.play()
                 }
             }
             VideoDetailFragment.ACTION_VIDEO_FRAGMENT_RESUMED -> {
                 player.listeners.isFragmentVisible = true
-                player.useVideoSource(true)
+                player.useVideoSource(!player.sourceController.isMainPlayerDetailsBrowsing)
             }
             VideoDetailFragment.ACTION_VIDEO_FRAGMENT_STOPPED -> {
                 player.listeners.isFragmentVisible = false

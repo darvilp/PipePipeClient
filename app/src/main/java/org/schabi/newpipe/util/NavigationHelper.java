@@ -55,6 +55,8 @@ import org.schabi.newpipe.player.PlayerService;
 import org.schabi.newpipe.player.PlayerService.PlayerType;
 import org.schabi.newpipe.player.PlayQueueActivity;
 import org.schabi.newpipe.player.Player;
+import org.schabi.newpipe.player.helper.MainPlayerQueueBrowsingPolicy;
+import org.schabi.newpipe.player.helper.MainPlayerQueueBrowsingPolicy.Relation;
 import org.schabi.newpipe.player.helper.PlayerHelper;
 import org.schabi.newpipe.player.helper.PlayerHolder;
 import org.schabi.newpipe.player.mediaitem.PlayerMediaItem;
@@ -129,6 +131,15 @@ public final class NavigationHelper {
         // see comment in `getPlayerEnqueueIntent` as to why `resumePlayback` is false
         return getPlayerIntent(context, targetClazz, playQueue, false)
                 .putExtra(PlayerIntentConstants.ENQUEUE_NEXT, true);
+    }
+
+    @NonNull
+    public static <T> Intent getPlayerEnqueueNextAndPlayIntent(
+            @NonNull final Context context,
+            @NonNull final Class<T> targetClazz,
+            @Nullable final PlayQueue playQueue) {
+        return getPlayerIntent(context, targetClazz, playQueue, false)
+                .putExtra(PlayerIntentConstants.ENQUEUE_NEXT_AND_PLAY, true);
     }
 
     /* PLAY */
@@ -386,14 +397,28 @@ public final class NavigationHelper {
                                                @Nullable final PlayQueue playQueue,
                                                final boolean switchingPlayers) {
 
+        final PlayerHolder playerHolder = PlayerHolder.getInstance();
+        @Nullable final PlayerMediaItem activeItem = playerHolder.getCurrentQueueItem();
+        final Relation mainQueueRelation = MainPlayerQueueBrowsingPolicy.classify(
+                playerHolder.getType(),
+                switchingPlayers,
+                activeItem == null ? null : activeItem.getServiceId(),
+                activeItem == null ? null : activeItem.getUrl(),
+                serviceId,
+                url);
+
         final boolean autoPlay;
-        @Nullable final PlayerService.PlayerType playerType = PlayerHolder.getInstance().getType();
-        if (!PlayerHolder.getInstance().isPlayerOpen()) {
+        @Nullable final PlayerService.PlayerType playerType = playerHolder.getType();
+        if (!playerHolder.isPlayerOpen()) {
             // no player open
             autoPlay = PlayerHelper.isAutoplayAllowedByUser(context);
         } else if (switchingPlayers) {
             // switching player to main player
-            autoPlay = PlayerHolder.getInstance().isPlaying(); // keep play/pause state
+            autoPlay = playerHolder.isPlaying(); // keep play/pause state
+        } else if (MainPlayerQueueBrowsingPolicy.shouldPreserveQueueForBrowsing(
+                mainQueueRelation, playQueue != null)) {
+            // Opening details is a browsing action. Replacing a live main queue requires Play.
+            autoPlay = false;
         } else if (playerType == PlayerService.PlayerType.VIDEO) {
             // opening new stream while already playing in main player
             autoPlay = PlayerHelper.isAutoplayAllowedByUser(context);

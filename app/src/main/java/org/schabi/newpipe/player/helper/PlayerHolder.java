@@ -24,6 +24,7 @@ import org.schabi.newpipe.player.event.PlayerServiceEventListener;
 import org.schabi.newpipe.player.event.PlayerServiceExtendedEventListener;
 import org.schabi.newpipe.player.mediasession.PlayerServiceInterface;
 import org.schabi.newpipe.player.playqueue.PlayQueue;
+import org.schabi.newpipe.player.mediaitem.PlayerMediaItem;
 import org.schabi.newpipe.util.DeviceUtils;
 
 public final class PlayerHolder {
@@ -70,6 +71,11 @@ public final class PlayerHolder {
         return player.isPlaying();
     }
 
+    @Nullable
+    public Player getPlayer() {
+        return player;
+    }
+
     public boolean isPlayerOpen() {
         return player != null;
     }
@@ -81,6 +87,14 @@ public final class PlayerHolder {
      */
     public boolean isPlayQueueReady() {
         return player != null && player.getPlayQueue() != null;
+    }
+
+    @Nullable
+    public PlayerMediaItem getCurrentQueueItem() {
+        if (!isPlayQueueReady()) {
+            return null;
+        }
+        return player.getPlayQueue().getItem();
     }
 
     public boolean isBound() {

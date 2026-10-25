@@ -87,6 +87,7 @@ import org.schabi.newpipe.local.dialog.PlaylistDialog;
 import org.schabi.newpipe.local.history.HistoryRecordManager;
 import org.schabi.newpipe.player.PlayerService.PlayerType;
 import org.schabi.newpipe.player.Player;
+import org.schabi.newpipe.player.PlayerIntentConstants;
 import org.schabi.newpipe.player.PlayerError;
 import org.schabi.newpipe.player.VideoDetailPlayerCrasher;
 import org.schabi.newpipe.player.PlayerPlaybackState;
@@ -96,6 +97,11 @@ import org.schabi.newpipe.player.PlaybackStartupTrace;
 import org.schabi.newpipe.player.PlayerUiModeController;
 import org.schabi.newpipe.player.event.OnKeyDownListener;
 import org.schabi.newpipe.player.event.PlayerServiceExtendedEventListener;
+import org.schabi.newpipe.player.helper.MainPlayerQueueActionPolicy;
+import org.schabi.newpipe.player.helper.MainPlayerQueueActionPolicy.Action;
+import org.schabi.newpipe.player.helper.MainPlayerQueueActionPolicy.QueueSnapshot;
+import org.schabi.newpipe.player.helper.MainPlayerQueueBrowsingPolicy;
+import org.schabi.newpipe.player.helper.MainPlayerQueueBrowsingPolicy.Relation;
 import org.schabi.newpipe.player.helper.PlayerHelper;
 import org.schabi.newpipe.player.chat.ChatStore;
 import org.schabi.newpipe.player.helper.PlayerHolder;
@@ -220,6 +226,10 @@ public final class VideoDetailFragment
     protected String url = null;
     @Nullable
     protected PlayQueue playQueue = null;
+    private boolean pendingDirectFullscreen;
+    // Keep an explicit navigation request separate from asynchronous active-queue updates.
+    @Nullable
+    private PlayQueue pendingPlaybackQueue;
     int bottomSheetState = BottomSheetBehavior.STATE_EXPANDED;
     protected boolean autoPlayEnabled = true;
 
@@ -241,6 +251,7 @@ public final class VideoDetailFragment
     private int selectedVideoStreamIndex = -1;
     private long pendingStartupTraceId;
     private BottomSheetBehavior<FrameLayout> bottomSheetBehavior;
+    private boolean returnToActiveItemAfterMiniPlayerDrag;
     private BroadcastReceiver broadcastReceiver;
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -275,8 +286,11 @@ public final class VideoDetailFragment
             return;
         }
 
-        if (playerIsNotStopped() && player.videoPlayerSelected()) {
-            addVideoPlayerView();
+        final Relation relation = mainPlayerRelationFor(serviceId, url);
+        if (playerIsNotStopped() && relation == Relation.ACTIVE_ITEM) {
+            attachMainPlayerToDisplayedVideo();
+        } else if (MainPlayerQueueBrowsingPolicy.shouldContinueAudioOnlyForBrowsing(relation)) {
+            continueAudioAndDetachMainPlayerForBrowsing();
         }
 
         if (playAfterConnect
@@ -284,7 +298,8 @@ public final class VideoDetailFragment
                 && isAutoplayEnabled()
                 && player.getParentActivity() == null)) {
             autoPlayEnabled = true; // forcefully start playing
-            openVideoPlayerAutoFullscreen();
+            openVideoPlayer(pendingDirectFullscreen
+                    || PlayerHelper.isStartMainPlayerFullscreenEnabled(requireContext()));
         }
     }
 
@@ -306,6 +321,7 @@ public final class VideoDetailFragment
                                                   @Nullable final PlayQueue queue) {
         final VideoDetailFragment instance = new VideoDetailFragment();
         instance.setInitialData(serviceId, videoUrl, name, queue);
+        instance.pendingPlaybackQueue = queue;
         return instance;
     }
 
@@ -366,6 +382,11 @@ public final class VideoDetailFragment
         outState.putString("url", url);
         outState.putInt("bottomSheetState", sanitizeBottomSheetState(bottomSheetState));
         outState.putBoolean("autoPlayEnabled", autoPlayEnabled);
+        outState.putBoolean("pendingDirectFullscreen", pendingDirectFullscreen);
+        if (pendingPlaybackQueue != null) {
+            outState.putString("pendingPlaybackQueue", SerializedCache.getInstance()
+                    .put(pendingPlaybackQueue, PlayQueue.class));
+        }
     }
 
     @Override
@@ -377,6 +398,13 @@ public final class VideoDetailFragment
         bottomSheetState = sanitizeBottomSheetState(savedInstanceState.getInt(
                 "bottomSheetState", BottomSheetBehavior.STATE_EXPANDED));
         autoPlayEnabled = savedInstanceState.getBoolean("autoPlayEnabled", true);
+        pendingDirectFullscreen = savedInstanceState.getBoolean("pendingDirectFullscreen", false);
+        final String pendingQueueKey = savedInstanceState.getString("pendingPlaybackQueue");
+        pendingPlaybackQueue = pendingQueueKey == null ? null
+                : SerializedCache.getInstance().get(pendingQueueKey, PlayQueue.class);
+        if (pendingPlaybackQueue != null) {
+            playQueue = pendingPlaybackQueue;
+        }
     }
 
     @Override
@@ -603,22 +631,15 @@ public final class VideoDetailFragment
                         currentInfo.getSubChannelName());
             }
         } else if (id == R.id.detail_thumbnail_root_layout) {
-            if (currentInfo != null) {
-                pendingStartupTraceId = PlaybackStartupTrace.begin(
-                        currentInfo.getId(), currentInfo.getUrl());
-            }
-            autoPlayEnabled = true; // forcefully start playing
-            // FIXME Workaround #7427
-            if (isPlayerAvailable()) {
-                player.setRecovery();
-            }
-            openVideoPlayerAutoFullscreen();
+            handleMainPlayerPlayFromDetails();
         } else if (id == R.id.detail_video_title_view
                 || id == R.id.detail_title_root_layout
                 || id == R.id.detail_toggle_secondary_controls_view) {
             toggleTitleAndSecondaryControls();
         } else if (id == R.id.overlay_thumbnail || id == R.id.overlay_metadata_layout || id == R.id.overlay_buttons_layout) {
-            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
+            if (!returnToActiveMainPlayerIfBrowsing(true)) {
+                bottomSheetBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
+            }
         } else if (id == R.id.overlay_play_pause_button) {
             if (playerIsNotStopped()) {
                 player.playPause();
@@ -924,6 +945,7 @@ public final class VideoDetailFragment
         if (isPlayerAvailable()
                 && player.getPlayQueue() != null
                 && player.videoPlayerSelected()
+                && mainPlayerRelationFor(serviceId, url) == Relation.ACTIVE_ITEM
                 && player.getPlayQueue().previous()) {
             return true; // no code here, as previous() was used in the if
         }
@@ -959,11 +981,12 @@ public final class VideoDetailFragment
     }
 
     private void setupFromHistoryItem(final StackItem item) {
+        cancelPendingFullscreen();
+        pendingPlaybackQueue = null;
         setAutoPlay(false);
-        hideMainPlayerOnLoadingNewStream();
-
         setInitialData(item.getServiceId(), item.getUrl(),
                 item.getTitle() == null ? "" : item.getTitle(), item.getPlayQueue());
+        hideMainPlayerOnLoadingNewStream();
         startLoading(false);
 
         // Maybe an item was deleted in background activity
@@ -1007,7 +1030,13 @@ public final class VideoDetailFragment
             player.disablePreloadingOfCurrentTrack();
         }
 
+        cancelPendingFullscreen();
+        if (mainPlayerRelationFor(newServiceId, newUrl) == Relation.OTHER_ITEM) {
+            continueAudioAndDetachMainPlayerForBrowsing();
+        }
+
         setInitialData(newServiceId, newUrl, newTitle, newQueue);
+        pendingPlaybackQueue = newQueue;
         startLoading(false, true);
     }
 
@@ -1090,6 +1119,7 @@ public final class VideoDetailFragment
                     isLoading.set(false);
                     hideMainPlayerOnLoadingNewStream();
                     handleResult(result);
+                    attachMainPlayerToDisplayedVideo();
                     showContent();
                     if (addToBackStack) {
                         if (playQueue == null) {
@@ -1476,6 +1506,7 @@ public final class VideoDetailFragment
             NavigationHelper.enqueueOnPlayer(activity, queue, PlayerType.POPUP);
         } else {
             NavigationHelper.playOnPopupPlayer(activity, queue, true);
+            pendingPlaybackQueue = null;
         }
     }
 
@@ -1485,24 +1516,35 @@ public final class VideoDetailFragment
      * @param directlyFullscreenIfApplicable whether to request fullscreen directly
      */
     public void openVideoPlayer(final boolean directlyFullscreenIfApplicable) {
-        if (directlyFullscreenIfApplicable) {
-            // Make sure the bottom sheet turns out expanded. When this code kicks in the bottom
-            // sheet could not have fully expanded yet, and thus be in the STATE_SETTLING state.
-            // When the activity is rotated, and its state is saved and then restored, the bottom
-            // sheet would forget what it was doing, since even if STATE_SETTLING is restored, it
-            // doesn't tell which state it was settling to, and thus the bottom sheet settles to
-            // STATE_COLLAPSED. This can be solved by manually setting the state that will be
-            // restored (i.e. bottomSheetState) to STATE_EXPANDED.
-            bottomSheetState = BottomSheetBehavior.STATE_EXPANDED;
-            // Without a connected player there is nothing to ask here, but onServiceConnected()
-            // issues the very same request as soon as the service started for this playback
-            // connects, and the player keeps a request it cannot honor until it is set up.
-            if (isPlayerAvailable()) {
-                player.changeFullscreen(true);
-            }
-        }
-
+        prepareMainPlayerUi(directlyFullscreenIfApplicable);
         openMainPlayer();
+    }
+
+    private void prepareMainPlayerUi(final boolean directlyFullscreenIfApplicable) {
+        if (!directlyFullscreenIfApplicable) {
+            cancelPendingFullscreen();
+            return;
+        }
+        pendingDirectFullscreen = true;
+        // Settling is not restorable; preserve the requested expanded destination.
+        bottomSheetState = BottomSheetBehavior.STATE_EXPANDED;
+        applyPendingFullscreen();
+    }
+
+    private void applyPendingFullscreen() {
+        if (pendingDirectFullscreen && binding != null && isPlayerAvailable()
+                && player.videoPlayerSelected()) {
+            // The v5.4 controller owns readiness once the service can accept this request.
+            pendingDirectFullscreen = false;
+            player.changeFullscreen(true);
+        }
+    }
+
+    private void cancelPendingFullscreen() {
+        pendingDirectFullscreen = false;
+        if (player != null) {
+            player.cancelPendingFullscreen();
+        }
     }
 
     /**
@@ -1510,6 +1552,132 @@ public final class VideoDetailFragment
      */
     public void openVideoPlayerAutoFullscreen() {
         openVideoPlayer(PlayerHelper.isStartMainPlayerFullscreenEnabled(requireContext()));
+    }
+
+    private void handleMainPlayerPlayFromDetails() {
+        if (currentInfo == null) {
+            return;
+        }
+
+        @Nullable final PlayQueue activeQueue =
+                isPlayerAvailable() ? player.getPlayQueue() : null;
+        final Relation relation = mainPlayerRelationFor(
+                currentInfo.getServiceId(), currentInfo.getOriginalUrl());
+        final boolean shouldShowQueueActions = MainPlayerQueueActionPolicy.shouldShowDialog(
+                relation,
+                !isPlayerAvailable() || player.isStopped(),
+                activeQueue == null ? 0 : activeQueue.size());
+
+        if (!shouldShowQueueActions) {
+            replaceQueueAndPlayDisplayedVideo();
+            return;
+        }
+
+        @Nullable final QueueSnapshot queueSnapshot =
+                MainPlayerQueueActionPolicy.snapshotOf(activeQueue);
+        if (queueSnapshot == null) {
+            replaceQueueAndPlayDisplayedVideo();
+            return;
+        }
+
+        showMainPlayerQueueActionDialog(currentInfo, queueSnapshot);
+    }
+
+    private void showMainPlayerQueueActionDialog(@NonNull final StreamInfo targetInfo,
+                                                  @NonNull final QueueSnapshot queueSnapshot) {
+        final CharSequence[] actions = {
+                getString(R.string.main_player_queue_action_play_now),
+                getString(R.string.main_player_queue_action_add_to_end),
+                getString(R.string.main_player_queue_action_replace)
+        };
+
+        new AlertDialog.Builder(activity)
+                .setTitle(R.string.main_player_queue_action_title)
+                .setItems(actions, (dialog, index) -> handleMainPlayerQueueAction(
+                        MainPlayerQueueActionPolicy.actionAt(index), targetInfo, queueSnapshot))
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    private void handleMainPlayerQueueAction(@NonNull final Action action,
+                                             @NonNull final StreamInfo targetInfo,
+                                             @NonNull final QueueSnapshot queueSnapshot) {
+        if (!isMainPlayerQueueActionStillValid(targetInfo, queueSnapshot)) {
+            if (isAdded()) {
+                Toast.makeText(requireContext(), R.string.main_player_queue_changed,
+                        Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+
+        switch (action) {
+            case PLAY_NOW_KEEP_QUEUE:
+                playDisplayedVideoNextInQueue(targetInfo);
+                break;
+            case ADD_TO_END:
+                NavigationHelper.enqueueOnPlayer(
+                        activity, new SinglePlayQueue(targetInfo), PlayerType.VIDEO);
+                break;
+            case REPLACE_QUEUE:
+                replaceQueueAndPlayDisplayedVideo();
+                break;
+        }
+    }
+
+    private boolean isMainPlayerQueueActionStillValid(
+            @NonNull final StreamInfo targetInfo,
+            @NonNull final QueueSnapshot queueSnapshot) {
+        if (!isAdded() || currentInfo != targetInfo || !isPlayerAvailable()) {
+            return false;
+        }
+
+        @Nullable final PlayQueue currentQueue = player.getPlayQueue();
+        return queueSnapshot.matches(currentQueue)
+                && MainPlayerQueueActionPolicy.shouldShowDialog(
+                        mainPlayerRelationFor(
+                                targetInfo.getServiceId(), targetInfo.getOriginalUrl()),
+                        player.isStopped(),
+                        currentQueue == null ? 0 : currentQueue.size());
+    }
+
+    private void replaceQueueAndPlayDisplayedVideo() {
+        if (currentInfo == null) {
+            return;
+        }
+
+        beginMainPlayerPlayback(currentInfo);
+        // FIXME Workaround #7427
+        if (isPlayerAvailable()) {
+            player.setRecovery();
+        }
+        openVideoPlayerAutoFullscreen();
+    }
+
+    private void playDisplayedVideoNextInQueue(@NonNull final StreamInfo targetInfo) {
+        beginMainPlayerPlayback(targetInfo);
+        // Save the current item's position before the queue selection changes.
+        player.setRecovery();
+        prepareMainPlayerUi(PlayerHelper.isStartMainPlayerFullscreenEnabled(requireContext()));
+
+        final PlayQueue queue = new SinglePlayQueue(targetInfo);
+        PlaybackStartupTrace.mark(pendingStartupTraceId, "play_queue_ready");
+        if (playerService.getView() != null) {
+            playerService.getView().setVisibility(View.GONE);
+        }
+        addVideoPlayerView();
+
+        final Intent playerIntent = NavigationHelper.getPlayerEnqueueNextAndPlayIntent(
+                requireContext(), DeviceUtils.getPlayerServiceClass(), queue);
+        playerIntent.putExtra(PlayerIntentConstants.PLAYER_TYPE, PlayerType.VIDEO.ordinal());
+        PlaybackStartupTrace.attach(playerIntent, pendingStartupTraceId);
+        ContextCompat.startForegroundService(activity, playerIntent);
+        pendingPlaybackQueue = null;
+    }
+
+    private void beginMainPlayerPlayback(@NonNull final StreamInfo targetInfo) {
+        pendingStartupTraceId = PlaybackStartupTrace.begin(
+                targetInfo.getId(), targetInfo.getUrl());
+        autoPlayEnabled = true;
     }
 
     private void openNormalBackgroundPlayer(final boolean append) {
@@ -1523,6 +1691,7 @@ public final class VideoDetailFragment
             NavigationHelper.enqueueOnPlayer(activity, queue, PlayerType.AUDIO);
         } else {
             NavigationHelper.playOnBackgroundPlayer(activity, queue, true);
+            pendingPlaybackQueue = null;
         }
     }
 
@@ -1533,6 +1702,16 @@ public final class VideoDetailFragment
             return;
         }
         if (currentInfo == null) {
+            return;
+        }
+
+        if (playerIsNotStopped()
+                && pendingPlaybackQueue == null
+                && mainPlayerRelationFor(currentInfo.getServiceId(), currentInfo.getOriginalUrl())
+                == Relation.ACTIVE_ITEM) {
+            attachMainPlayerToDisplayedVideo();
+            player.play();
+            pendingPlaybackQueue = null;
             return;
         }
 
@@ -1550,6 +1729,7 @@ public final class VideoDetailFragment
                 DeviceUtils.getPlayerServiceClass(), queue, true, autoPlayEnabled);
         PlaybackStartupTrace.attach(playerIntent, pendingStartupTraceId);
         ContextCompat.startForegroundService(activity, playerIntent);
+        pendingPlaybackQueue = null;
     }
 
     /**
@@ -1563,6 +1743,14 @@ public final class VideoDetailFragment
         if (!isPlayerServiceAvailable()
                 || playerService.getView() == null
                 || !player.videoPlayerSelected()) {
+            return;
+        }
+
+        final Relation relation = mainPlayerRelationFor(serviceId, url);
+        if (relation == Relation.ACTIVE_ITEM) {
+            return;
+        } else if (relation == Relation.OTHER_ITEM) {
+            continueAudioAndDetachMainPlayerForBrowsing();
             return;
         }
 
@@ -1580,7 +1768,7 @@ public final class VideoDetailFragment
             return new SinglePlayQueue(currentInfo);
         }
 
-        PlayQueue queue = playQueue;
+        PlayQueue queue = pendingPlaybackQueue != null ? pendingPlaybackQueue : playQueue;
         // Size can be 0 because queue removes bad stream automatically when error occurs
         if (queue == null || queue.isEmpty()) {
             queue = new SinglePlayQueue(currentInfo);
@@ -1618,6 +1806,51 @@ public final class VideoDetailFragment
                 && (!isPlayerAvailable() || player.videoPlayerSelected())
                 && bottomSheetState != BottomSheetBehavior.STATE_HIDDEN
                 && PlayerHelper.isAutoplayAllowedByUser(requireContext());
+    }
+
+    @NonNull
+    private Relation mainPlayerRelationFor(final int targetServiceId,
+                                           @Nullable final String targetUrl) {
+        if (!isPlayerAvailable() || player.getPlayQueue() == null) {
+            return Relation.NO_ACTIVE_MAIN_QUEUE;
+        }
+
+        @Nullable final PlayerMediaItem activeItem = player.getPlayQueue().getItem();
+        return MainPlayerQueueBrowsingPolicy.classify(
+                player.getPlayerType(),
+                false,
+                activeItem == null ? null : activeItem.getServiceId(),
+                activeItem == null ? null : activeItem.getUrl(),
+                targetServiceId,
+                targetUrl);
+    }
+
+    private void continueAudioAndDetachMainPlayerForBrowsing() {
+        if (!isPlayerAndPlayerServiceAvailable()
+                || playerService.getView() == null
+                || !player.videoPlayerSelected()) {
+            return;
+        }
+
+        player.setMainPlayerDetailsBrowsing(true);
+
+        if (binding != null) {
+            removeVideoPlayerView();
+        }
+        playerService.getView().setVisibility(View.GONE);
+    }
+
+    private void attachMainPlayerToDisplayedVideo() {
+        if (!isPlayerAndPlayerServiceAvailable()
+                || playerService.getView() == null
+                || player.isStopped()
+                || mainPlayerRelationFor(serviceId, url) != Relation.ACTIVE_ITEM) {
+            return;
+        }
+
+        player.setMainPlayerDetailsBrowsing(false);
+        playerService.getView().setVisibility(View.VISIBLE);
+        addVideoPlayerView();
     }
 
     private void addVideoPlayerView() {
@@ -2221,7 +2454,25 @@ public final class VideoDetailFragment
 
     @Override
     public void onQueueUpdate(final PlayQueue queue) {
-        playQueue = queue;
+        if (pendingPlaybackQueue != null) {
+            // The initial service callback can still describe the playlist being replaced.
+            return;
+        }
+        @Nullable final PlayerMediaItem activeItem = queue.getItem();
+        final Relation relation = MainPlayerQueueBrowsingPolicy.classify(
+                player == null ? null : player.getPlayerType(),
+                false,
+                activeItem == null ? null : activeItem.getServiceId(),
+                activeItem == null ? null : activeItem.getUrl(),
+                serviceId,
+                url);
+
+        if (relation != Relation.OTHER_ITEM) {
+            playQueue = queue;
+            if (relation == Relation.ACTIVE_ITEM) {
+                attachMainPlayerToDisplayedVideo();
+            }
+        }
         if (DEBUG) {
             Log.d(TAG, "onQueueUpdate() called with: serviceId = ["
                     + serviceId + "], videoUrl = [" + url + "], name = ["
@@ -2233,13 +2484,15 @@ public final class VideoDetailFragment
         // deleted/added items inside Channel/Playlist queue and makes possible to have
         // a history of played items
         @Nullable final StackItem stackPeek = stack.peek();
-        if (stackPeek != null && !stackPeek.getPlayQueue().equals(queue)) {
-            @Nullable final PlayerMediaItem playQueueItem = queue.getItem();
-            if (playQueueItem != null) {
-                stack.push(new StackItem(playQueueItem.getServiceId(), playQueueItem.getUrl(),
-                        playQueueItem.getTitle(), queue));
-                return;
-            } // else continue below
+        if (relation != Relation.OTHER_ITEM) {
+            if (stackPeek != null && !stackPeek.getPlayQueue().equals(queue)) {
+                @Nullable final PlayerMediaItem playQueueItem = queue.getItem();
+                if (playQueueItem != null) {
+                    stack.push(new StackItem(playQueueItem.getServiceId(), playQueueItem.getUrl(),
+                            playQueueItem.getTitle(), queue));
+                    return;
+                } // else continue below
+            }
         }
 
         @Nullable final StackItem stackWithQueue = findQueueInStack(queue);
@@ -2257,6 +2510,10 @@ public final class VideoDetailFragment
                                  final RepeatMode repeatMode,
                                  final boolean shuffled,
                                  final PlayerPlaybackParameters parameters) {
+        if (binding == null) {
+            return;
+        }
+        applyPendingFullscreen();
         setOverlayPlayPauseImage(player != null && player.isPlaying());
 
         switch (state) {
@@ -2304,6 +2561,10 @@ public final class VideoDetailFragment
             item.setTitle(info.getName());
             item.setUrl(info.getUrl());
         }
+        if (queue.equals(playQueue) || (player != null && player.videoPlayerSelected())) {
+            // The main-player overlay follows playback even while details show another video.
+            updateOverlayData(info.getName(), info.getUploaderName(), info.getThumbnailUrl());
+        }
         // They are not equal when user watches something in popup while browsing in fragment and
         // then changes screen orientation. In that case the fragment will set itself as
         // a service listener and will receive initial call to onMetadataUpdate()
@@ -2311,7 +2572,6 @@ public final class VideoDetailFragment
             return;
         }
 
-        updateOverlayData(info.getName(), info.getUploaderName(), info.getThumbnailUrl());
         if (currentInfo != null && info.getUrl().equals(currentInfo.getUrl())) {
             return;
         }
@@ -2338,6 +2598,7 @@ public final class VideoDetailFragment
 
     @Override
     public void onServiceStopped() {
+        cancelPendingFullscreen();
         if (binding != null) {
             setOverlayPlayPauseImage(false);
             if (currentInfo != null) {
@@ -2354,7 +2615,8 @@ public final class VideoDetailFragment
         setupBrightness();
         if (!isPlayerAndPlayerServiceAvailable()
                 || playerService.getView() == null
-                || player.getParentActivity() == null) {
+                || player.getParentActivity() == null
+                || mainPlayerRelationFor(serviceId, url) != Relation.ACTIVE_ITEM) {
             return;
         }
 
@@ -2564,7 +2826,9 @@ public final class VideoDetailFragment
         if (currentWorker != null) {
             currentWorker.dispose();
         }
+        cancelPendingFullscreen();
         playerHolder.stopService();
+        pendingPlaybackQueue = null;
         setInitialData(0, null, "", null);
         currentInfo = null;
         updateOverlayData(null, null, null);
@@ -2690,6 +2954,7 @@ public final class VideoDetailFragment
                 try {
                     switch (newState) {
                         case BottomSheetBehavior.STATE_HIDDEN:
+                            returnToActiveItemAfterMiniPlayerDrag = false;
                             moveFocusToMainFragment(true);
                             manageSpaceAtTheBottom(true);
 
@@ -2698,6 +2963,11 @@ public final class VideoDetailFragment
                             applyOverlayForState(newState);
                             break;
                         case BottomSheetBehavior.STATE_EXPANDED:
+                            final boolean returnToActiveItem = returnToActiveItemAfterMiniPlayerDrag;
+                            returnToActiveItemAfterMiniPlayerDrag = false;
+                            if (returnToActiveItem && returnToActiveMainPlayerIfBrowsing(true)) {
+                                return;
+                            }
                             moveFocusToMainFragment(false);
                             manageSpaceAtTheBottom(false);
 
@@ -2713,6 +2983,7 @@ public final class VideoDetailFragment
                             }
                             break;
                         case BottomSheetBehavior.STATE_COLLAPSED:
+                            returnToActiveItemAfterMiniPlayerDrag = false;
                             moveFocusToMainFragment(true);
                             manageSpaceAtTheBottom(false);
 
@@ -2732,6 +3003,8 @@ public final class VideoDetailFragment
                             }
                             break;
                         case BottomSheetBehavior.STATE_DRAGGING:
+                            returnToActiveItemAfterMiniPlayerDrag = true;
+                            // fall through
                         case BottomSheetBehavior.STATE_SETTLING:
                             binding.overlayLayout.setVisibility(View.VISIBLE);
                             if (isPlayerAvailable() && player.isFullscreen()) {
@@ -2772,6 +3045,24 @@ public final class VideoDetailFragment
             }
 
         });
+    }
+
+    private boolean returnToActiveMainPlayerIfBrowsing(final boolean userInitiatedExpansion) {
+        final Relation relation = mainPlayerRelationFor(serviceId, url);
+        if (!MainPlayerQueueBrowsingPolicy.shouldReturnToActiveItemOnPlayerExpansion(
+                relation, userInitiatedExpansion)) {
+            return false;
+        }
+
+        @Nullable final PlayerMediaItem activeItem = playerHolder.getCurrentQueueItem();
+        if (activeItem == null) {
+            return false;
+        }
+
+        NavigationHelper.openVideoDetailFragment(
+                requireContext(), getFM(), activeItem.getServiceId(), activeItem.getUrl(),
+                activeItem.getTitle(), null, false);
+        return true;
     }
 
     static boolean isStableBottomSheetState(final int state) {

@@ -320,6 +320,32 @@ public abstract class PlayQueue implements Serializable {
         appendInternal(items, true);
     }
 
+    /** Inserts after the selected item, preserving shuffled order and the original backup. */
+    public synchronized void insertNextAndSelect(@NonNull final PlayerMediaItem item) {
+        final int currentIndex = getIndex();
+        @Nullable final PlayerMediaItem currentItem = getItem();
+        final boolean preserveActiveAutoQueuedItem = currentIndex == size() - 1
+                && currentItem != null && currentItem.getUuid().equals(autoQueuedUuid);
+        final String previousAutoQueuedUuid = autoQueuedUuid;
+        if (preserveActiveAutoQueuedItem) {
+            // The selected auto-queued item must remain available to Previous.
+            autoQueuedUuid = null;
+        }
+        try {
+            append(item);
+        } finally {
+            if (preserveActiveAutoQueuedItem) {
+                autoQueuedUuid = previousAutoQueuedUuid;
+            }
+        }
+        final int appendedIndex = size() - 1;
+        final int nextIndex = Math.min(currentIndex + 1, appendedIndex);
+        if (appendedIndex != nextIndex) {
+            move(appendedIndex, nextIndex);
+        }
+        setIndex(nextIndex);
+    }
+
     private synchronized void appendInternal(@NonNull final List<PlayerMediaItem> items,
                                              final boolean autoQueued) {
         final List<PlayerMediaItem> itemList = new ArrayList<>(items);

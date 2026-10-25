@@ -133,6 +133,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
     private var searchClear: View? = null
     private var originalItems = mutableListOf<StreamItem>()
     private var filteredItems = mutableListOf<StreamItem>()
+    private var displayedContent: FeedState.LoadedState? = null
     private var isFilterEnabled = false
     private var isPullToRefreshEnabled = true
 
@@ -511,6 +512,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
 
         originalItems.clear()
         filteredItems.clear()
+        displayedContent = null
         editText = null
         searchClear = null
 
@@ -775,7 +777,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
         )
 
         if (keepContentVisible) {
-            if (originalItems.isEmpty() && previousContent != null) {
+            if (previousContent != null && previousContent !== displayedContent) {
                 displayLoadedContent(
                     loadedState = previousContent,
                     highlightNewItems = false,
@@ -919,6 +921,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
         // Store original items for filtering
         originalItems.clear()
         originalItems.addAll(loadedState.items)
+        displayedContent = loadedState
         filteredItems.clear()
         filteredItems.addAll(originalItems)
 
@@ -958,7 +961,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
         )
 
         if (keepContentVisible) {
-            if (originalItems.isEmpty() && previousContent != null) {
+            if (previousContent != null && previousContent !== displayedContent) {
                 displayLoadedContent(
                     loadedState = previousContent,
                     highlightNewItems = false,

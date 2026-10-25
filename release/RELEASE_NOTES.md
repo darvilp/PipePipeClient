@@ -1,17 +1,16 @@
-# PipePipe All Features 5.5.0-unofficial.11
+# PipePipe All Features 5.5.0-unofficial.12
 
-Local test-drive candidate based on the exact upstream PipePipe v5.5.0 release and its pinned extractor. Publication is pending device acceptance and a separate user request.
+Two corrections to the All Features build based on upstream PipePipe 5.5.0:
 
-Includes upstream list multi-selection, fullscreen touch locking, revised pinch zoom, live chat, comment and channel-ID filtering, preferred audio quality, DeArrow, and YouTube/SoundCloud/PeerTube/NicoNico fixes. Upstream fullscreen minimization and notification seeking fixes are included.
+- Changing the played-items filter during a subscription refresh now updates the visible feed during progress and error states, including when the filter leaves no items. Repeated progress updates keep the displayed snapshot in place.
+- Editing a subscription group's content defaults now preserves channel exceptions through intermediate checkbox choices. Exceptions are normalized when the group is saved, so changing the same defaults in a different order no longer discards an unsaved exception.
 
-Retains all eleven maintained fork features and the `.9` queue-selection correction. Each stable feature branch was independently built with its instrumentation APK and JVM tests before integration. History header long-press enqueue actions coexist with upstream's new sort menu. Feed multi-selection works alongside nonblocking refresh. SponsorBlock keeps the precise editor, drafts and queue holds while adopting upstream's separate global-enable and skipping preferences. Pending queue, mode-switch and fullscreen state remain preserved across recreation.
+Includes the same integrated fork features as `5.5.0-unofficial.11`. The extractor and FFmpeg inputs are unchanged. This release adds no database migration beyond the content-rules schema already present in `.11`.
 
-The package remains `InfinityLoop1309.NewPipeEnhanced.debug.allfeatures`, with label `PipePipe All Features (Unofficial)` and the established signing certificate. The signed release variant is minified and non-debuggable. Arm64 version code is 111804, allowing an in-place update from `.10` with the same signer. Updates remain manual through the fork release page.
+The app remains **PipePipe All Features (Unofficial)**, package `InfinityLoop1309.NewPipeEnhanced.debug.allfeatures`, signed with the established All Features certificate. It is minified and non-debuggable. Arm64 version code is **111904**, allowing an in-place update from `.11`. Updates remain manual through this fork's release page.
 
-Includes a focused fix for a pre-existing media-session crash when a queue item has no thumbnail. Missing and empty artwork is omitted from queue metadata; valid artwork is retained. Emulator mode-switch validation exposed the crash.
+Validation includes the focused feed and content-rule emulator regressions, JVM tests, the existing release lint baseline, structural and signing checks for all four ABI APKs, and a controlled signed `.11` to `.12` emulator upgrade retaining subscriptions, a local playlist, speed, pitch and theme. The emulator checks do not establish physical-device playback quality or every possible user configuration.
 
-Also makes the new upstream chat-panel cleanup safe before player views are created. Headless queue regressions exposed the missing view guard; observer cleanup and normal panel hiding are preserved.
+The previously reported scheduled What's New population behavior remains a separate investigation. The feed correction here concerns played-items filtering during an active refresh.
 
-Test queue actions while playing and paused, main/background/popup switching, hidden YouTube playback, live chat, list selection during refresh, fullscreen/rotation and touch locking, SponsorBlock toggles and editing holds, DeArrow, and subscription content rules. The previously reported scheduled What's New refresh behavior remains an unresolved investigation; this sync does not claim to fix it.
-
-Use the exported `SHA256SUMS` and `source-manifest.json` to identify the exact APK and client/extractor revisions. Build, emulator and signed-device acceptance are separate validation steps. Previous releases, original feature refs and the older unfinished merge are preserved.
+Use `SHA256SUMS` and `source-manifest.json` to identify the exact APKs and source revisions. All earlier releases remain available.

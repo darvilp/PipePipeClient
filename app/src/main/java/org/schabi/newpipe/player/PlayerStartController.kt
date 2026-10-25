@@ -36,8 +36,10 @@ class PlayerStartController(private val player: Player) {
             && activeQueue != null
         ) {
             val itemToPlay = newQueue.getItem() ?: return
+            player.sourceController.sourceSwitchRecoveryItem = null
             player.saveStreamProgressState()
             activeQueue.insertNextAndSelect(itemToPlay)
+            activeQueue.setRecovery(activeQueue.index, newQueue.getRecoveryPosition(itemToPlay))
             player.notifyQueueUpdateToListeners()
             player.play()
             return
@@ -66,6 +68,7 @@ class PlayerStartController(private val player: Player) {
             return
         }
 
+        player.sourceController.sourceSwitchRecoveryItem = null
         player.sourceController.isMainPlayerDetailsBrowsing = false
 
         val parametersBuilder = player.trackSelector.buildUponParameters()

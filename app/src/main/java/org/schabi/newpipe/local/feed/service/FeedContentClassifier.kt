@@ -12,11 +12,11 @@ data class FeedStreamItem(
 
 object FeedContentClassifier {
 
-    fun fromChannelTab(channelTab: String): FeedContentSelection {
+    fun fromChannelTab(channelTab: String, stream: StreamInfoItem): FeedContentSelection {
         return when (channelTab) {
             ChannelTabs.SHORTS -> FeedContentSelection.SHORTS
             ChannelTabs.LIVESTREAMS -> FeedContentSelection.LIVE
-            else -> FeedContentSelection.VIDEOS
+            else -> fromStream(stream)
         }
     }
 

@@ -205,8 +205,6 @@ class FeedLoadManager(private val context: Context) {
                                             errors.addAll(channelTabInfo.errors)
                                             val tabName = linkHandler.contentFilters
                                                 .firstOrNull()?.name.orEmpty()
-                                            val contentSelection =
-                                                FeedContentClassifier.fromChannelTab(tabName)
                                             val items = if (channelTabInfo.relatedItems.isEmpty()) {
                                                 if (channelTabInfo.nextPage == null) {
                                                     return@flatMap emptyList()
@@ -223,7 +221,8 @@ class FeedLoadManager(private val context: Context) {
                                             }
 
                                             items.filterIsInstance<StreamInfoItem>().map { stream ->
-                                                FeedStreamItem(stream, contentSelection)
+                                                FeedStreamItem(stream,
+                                                    FeedContentClassifier.fromChannelTab(tabName, stream))
                                             }
                                         }
                                 }

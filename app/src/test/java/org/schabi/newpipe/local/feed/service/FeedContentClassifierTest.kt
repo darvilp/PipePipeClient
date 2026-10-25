@@ -14,20 +14,38 @@ class FeedContentClassifierTest {
     fun `channel tabs retain their content provenance`() {
         assertEquals(
             FeedContentSelection.VIDEOS,
-            FeedContentClassifier.fromChannelTab(ChannelTabs.VIDEOS)
+            FeedContentClassifier.fromChannelTab(ChannelTabs.VIDEOS,
+                stream("tab", StreamType.VIDEO_STREAM))
         )
         assertEquals(
             FeedContentSelection.VIDEOS,
-            FeedContentClassifier.fromChannelTab(ChannelTabs.TRACKS)
+            FeedContentClassifier.fromChannelTab(ChannelTabs.TRACKS,
+                stream("tab", StreamType.VIDEO_STREAM))
         )
         assertEquals(
             FeedContentSelection.SHORTS,
-            FeedContentClassifier.fromChannelTab(ChannelTabs.SHORTS)
+            FeedContentClassifier.fromChannelTab(ChannelTabs.SHORTS,
+                stream("tab", StreamType.VIDEO_STREAM))
         )
         assertEquals(
             FeedContentSelection.LIVE,
-            FeedContentClassifier.fromChannelTab(ChannelTabs.LIVESTREAMS)
+            FeedContentClassifier.fromChannelTab(ChannelTabs.LIVESTREAMS,
+                stream("tab", StreamType.VIDEO_STREAM))
         )
+    }
+
+    @Test
+    fun `generic channel tabs classify live metadata but explicit tabs retain provenance`() {
+        val live = stream("live-in-videos", StreamType.LIVE_STREAM)
+        for (tab in listOf(ChannelTabs.VIDEOS, ChannelTabs.TRACKS)) {
+            assertEquals(FeedContentSelection.LIVE,
+                FeedContentClassifier.fromChannelTab(tab, live))
+        }
+        assertEquals(FeedContentSelection.SHORTS,
+            FeedContentClassifier.fromChannelTab(ChannelTabs.SHORTS, live))
+        assertEquals(FeedContentSelection.LIVE,
+            FeedContentClassifier.fromChannelTab(ChannelTabs.LIVESTREAMS,
+                stream("archived-live", StreamType.VIDEO_STREAM)))
     }
 
     @Test

@@ -1273,6 +1273,7 @@ public final class VideoDetailFragment
                 sponsorBlockFragment.restoreDraft(sponsorBlockDraft);
                 sponsorBlockDraft = null;
                 sponsorBlockFragment.setListener(this);
+                sponsorBlockFragment.setHostVisible(bottomSheetState == BottomSheetBehavior.STATE_EXPANDED);
                 sponsorBlockFragment.setSubmitting(info.getUrl().equals(sponsorBlockSubmissionUrl)
                         && info.getServiceId() == sponsorBlockSubmissionServiceId);
 
@@ -2867,6 +2868,8 @@ public final class VideoDetailFragment
         if (binding == null) {
             return;
         }
+        getSponsorBlockFragment().ifPresent(editor ->
+                editor.setHostVisible(state == BottomSheetBehavior.STATE_EXPANDED));
         final AppBarLayout.Behavior appBarBehavior = getAppBarBehavior();
         switch (state) {
             case BottomSheetBehavior.STATE_COLLAPSED:

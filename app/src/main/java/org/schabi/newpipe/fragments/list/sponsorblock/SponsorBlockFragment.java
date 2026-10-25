@@ -52,6 +52,7 @@ public class SponsorBlockFragment extends StateSaverFragment
     private EditText timeInput;
     private boolean editingStart;
     private boolean submitting;
+    private boolean hostVisible = true;
     private Bundle initialDraft;
     private String startInput;
     private String endInput;
@@ -435,8 +436,13 @@ public class SponsorBlockFragment extends StateSaverFragment
         updateHold();
     }
 
+    public void setHostVisible(final boolean visible) {
+        hostVisible = visible;
+        updateHold();
+    }
+
     private void updateHold() {
-        final boolean hold = binding != null && isResumed() && getUserVisibleHint()
+        final boolean hold = hostVisible && binding != null && isResumed() && getUserVisibleHint()
                 && markedStartTime != null && streamInfo != null && listener != null
                 && listener.getSponsorBlockPosition(streamInfo.getUrl()) != null;
         if (listener != null && streamInfo != null) {

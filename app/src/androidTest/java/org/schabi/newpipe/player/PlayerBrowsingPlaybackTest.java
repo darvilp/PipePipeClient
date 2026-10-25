@@ -14,6 +14,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
+import android.os.Bundle;
 import android.os.SystemClock;
 import android.support.v4.media.session.MediaSessionCompat;
 import android.widget.TextView;
@@ -282,6 +283,7 @@ public class PlayerBrowsingPlaybackTest {
         final Object[] returnManager = new Object[1];
         final SingleSubject<StreamInfo> metadataGate = SingleSubject.create();
         final boolean[] timestampSeek = {false};
+        final Bundle recoveryEvidence = new Bundle();
         instrumentation.runOnMainSync(() -> {
             assertSame(queue, player.getPlayQueue());
             assertEquals(7000, engine.getCurrentPosition(), 100);
@@ -291,7 +293,10 @@ public class PlayerBrowsingPlaybackTest {
             player.setMainPlayerDetailsBrowsing(false);
             returnManager[0] = sourceManager();
             assertNotSame(audioManager, returnManager[0]);
-            assertEquals(7000, queue.getRecoveryPosition(queue.getItem()), 100);
+            final long recovery = queue.getRecoveryPosition(queue.getItem());
+            assertEquals(7000, recovery, 100);
+            recoveryEvidence.putLong("capturedRecoveryMs", recovery);
+            instrumentation.sendStatus(0, recoveryEvidence);
             try {
                 final Field resolver = returnManager[0].getClass()
                         .getDeclaredField("streamInfoResolver");
@@ -330,7 +335,11 @@ public class PlayerBrowsingPlaybackTest {
         instrumentation.runOnMainSync(() -> {
             assertFalse(metadataGate.hasValue());
             assertSame(returnManager[0], sourceManager());
-            engine.setPlayWhenReady(false);
+            assertTrue("Timestamp playback remains enabled while metadata is held",
+                    engine.getPlayWhenReady());
+            recoveryEvidence.putLong("afterTimestampRecoveryMs",
+                    queue.getRecoveryPosition(queue.getItem()));
+            instrumentation.sendStatus(0, recoveryEvidence);
             metadataGate.onSuccess(fixtureMetadata.get(CURRENT_URL));
         });
         await(() -> engine.getPlaybackState() == ExoPlayer.STATE_READY
@@ -341,7 +350,12 @@ public class PlayerBrowsingPlaybackTest {
         instrumentation.runOnMainSync(() -> {
             assertSame(queue, player.getPlayQueue());
             assertSame(engine, player.simpleExoPlayer);
-            assertEquals("Explicit timestamp must survive delayed return-source synchronization",
+            recoveryEvidence.putLong("preparedRecoveryMs",
+                    queue.getRecoveryPosition(queue.getItem()));
+            recoveryEvidence.putLong("preparedPositionMs", engine.getCurrentPosition());
+            instrumentation.sendStatus(0, recoveryEvidence);
+            assertEquals("Explicit timestamp must survive delayed return-source synchronization: "
+                            + recoveryEvidence,
                     5000, engine.getCurrentPosition(), 750);
         });
     }

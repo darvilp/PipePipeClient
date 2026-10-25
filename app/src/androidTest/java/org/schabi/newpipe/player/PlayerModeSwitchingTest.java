@@ -138,6 +138,52 @@ public class PlayerModeSwitchingTest {
         checkPausedLiveResumeUsesCurrentDefaultPosition(true);
     }
 
+    @Test
+    public void vodSelectedWhileLiveIdleKeepsRecoveryPosition() throws Exception {
+        start(PlayerType.AUDIO, false, false, false, false, true);
+        final Player original = activity.player;
+        final PlayQueue queue = original.getPlayQueue();
+        final String url = "https://www.youtube.com/watch?v=ccccccccccc";
+        final StreamInfo info = new StreamInfo(0, url, url, "Audio on demand fixture");
+        info.setStreamType(StreamType.AUDIO_STREAM);
+        info.setDuration(30);
+        info.setUploaderName("Synthetic fixture");
+        info.setDescription(Description.EMPTY_DESCRIPTION);
+        info.setAudioStreams(Collections.singletonList(new AudioStream.Builder()
+                .setId("live-idle-vod-audio")
+                .setContent(Uri.fromFile(copyAsset("player-mode-fixture.m4a")).toString(), true)
+                .setMediaFormat(MediaFormat.M4A).setAverageBitrate(96).build()));
+        final PlayerMediaItem selected = PlayerMediaItem.forQueueItem(info);
+        instrumentation.runOnMainSync(original::pause);
+        await(original::isLiveIdle, "Paused live source must enter idle");
+        instrumentation.runOnMainSync(() -> {
+            assertTrue(PreferenceManager.getDefaultSharedPreferences(main).edit()
+                    .putBoolean(main.getString(R.string.always_start_from_beginning_key), false)
+                    .commit());
+            InfoCache.getInstance().putInfo(0, url, info, InfoItem.InfoType.STREAM);
+            queue.append(selected);
+            original.selectQueueItem(selected);
+            queue.setRecovery(queue.getIndex(), 5000);
+            assertTrue(original.isLiveIdle());
+            assertNull(field(original, "playQueueManager"));
+            assertEquals(StreamType.LIVE_STREAM,
+                    original.getCurrentStreamInfo().get().getStreamType());
+            original.play();
+        });
+        await(() -> original.simpleExoPlayer.getPlaybackState()
+                == com.google.android.exoplayer2.Player.STATE_READY
+                && original.getCurrentItem() == selected, "Selected audio on demand prepares");
+        instrumentation.runOnMainSync(() -> {
+            original.pause();
+            assertFalse(original.isLiveIdle());
+            assertSame(queue, original.getPlayQueue());
+            assertSame(selected, queue.getItem());
+            assertEquals(url, original.getCurrentStreamInfo().get().getUrl());
+            assertEquals("Selected VOD must retain its five-second recovery",
+                    5000, original.getCurrentPosition(), 750);
+        });
+    }
+
     private void checkPausedLiveResumeUsesCurrentDefaultPosition(final boolean switchMode)
             throws Exception {
         instrumentation.runOnMainSync(() -> {

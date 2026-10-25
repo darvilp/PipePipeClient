@@ -10,6 +10,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.schabi.newpipe.database.feed.model.FeedContentSelection
+import org.schabi.newpipe.local.feed.FeedDatabaseManager
+import org.schabi.newpipe.local.subscription.FeedGroupIcon
+import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class FeedGroupContentDatabaseTest {
@@ -92,6 +96,28 @@ class FeedGroupContentDatabaseTest {
             assertTrue(cursor.isNull(1))
             assertEquals(false, cursor.moveToNext())
         }
+    }
+
+    @Test
+    fun queuedGroupCreationUsesSubmittedMembershipAndRules() {
+        insertSubscription(1)
+        insertSubscription(2)
+        val membership = hashSetOf(1L)
+        val overrides = hashMapOf(1L to FeedContentSelection.LIVE)
+        val save = FeedDatabaseManager(database).createGroupWithContentRules(
+            "Submitted group", FeedGroupIcon.ALL, FeedContentSelection.VIDEOS,
+            membership, overrides
+        )
+        membership.clear()
+        membership.add(2L)
+        overrides.clear()
+        save.test().awaitDone(5, TimeUnit.SECONDS).assertComplete().assertNoErrors()
+
+        val group = database.feedGroupDAO().getAll().firstOrError().blockingGet().single()
+        val saved = database.feedGroupDAO().getSubscriptionsForGroup(group.uid)
+            .firstOrError().blockingGet().single()
+        assertEquals("Queued creation must preserve submitted membership", 1L, saved.subscriptionId)
+        assertEquals(FeedContentSelection.LIVE, saved.contentSelectionOverride)
     }
 
     private fun insertSubscription(id: Long) {

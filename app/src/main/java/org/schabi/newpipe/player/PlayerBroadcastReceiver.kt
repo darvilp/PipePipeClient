@@ -92,6 +92,7 @@ class PlayerBroadcastReceiver(private val player: Player) {
                     .createNotificationIfNeededAndUpdate(player, true)
             VideoDetailFragment.ACTION_SEEK_TO -> {
                 player.seekTo(intent.getIntExtra("Timestamp", 0) * 1000L)
+                player.setRecovery()
                 if (player.progressController.wasPlaying) {
                     player.simpleExoPlayer.play()
                 }

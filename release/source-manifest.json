@@ -1,7 +1,7 @@
 {
   "channel": "unofficial/all-features",
   "client_repository": "https://github.com/darvilp/PipePipeClient.git",
-  "integration_commit": "083cc0c57d2aced4493bd039e2d5f4666d8e0359",
+  "integration_commit": "7282fcbbde258003cae17bcff08ec8baa782db26",
   "upstream_release": "v5.5.0",
   "upstream_client_commit": "b91f008fb4d25b470c4383dcf42e31ee7696d272",
   "extractor_repository": "https://github.com/darvilp/PipePipeExtractor.git",

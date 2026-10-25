@@ -566,6 +566,12 @@ public class PlayerBrowsingPlaybackTest {
     }
 
     @Test
+    public void zeroUrlTimestampDuringReturnSourceReloadWinsOverCapturedRecovery()
+            throws Exception {
+        checkTimestampDuringReturnSourceReload(false, 0);
+    }
+
+    @Test
     public void plainTimestampDuringReturnSourceReloadWinsOverCapturedRecovery() throws Exception {
         checkTimestampDuringReturnSourceReload(true, 5);
     }
@@ -680,6 +686,8 @@ public class PlayerBrowsingPlaybackTest {
             recoveryEvidence.putLong("afterTimestampRecoveryMs",
                     queue.getRecoveryPosition(queue.getItem()));
             instrumentation.sendStatus(0, recoveryEvidence);
+            assertEquals("Explicit seek must replace recovery before pending metadata arrives",
+                    targetPositionMs, queue.getRecoveryPosition(queue.getItem()));
             metadataGate.onSuccess(fixtureMetadata.get(CURRENT_URL));
         });
         await(() -> engine.getPlaybackState() == ExoPlayer.STATE_READY

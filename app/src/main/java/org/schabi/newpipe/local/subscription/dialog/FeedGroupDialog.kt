@@ -25,7 +25,6 @@ import com.xwray.groupie.Section
 import org.schabi.newpipe.R
 import org.schabi.newpipe.database.feed.model.FeedContentSelection
 import org.schabi.newpipe.database.feed.model.FeedContentType
-import org.schabi.newpipe.database.feed.model.FeedGroupContentRules
 import org.schabi.newpipe.database.feed.model.FeedGroupEntity
 import org.schabi.newpipe.database.feed.model.FeedGroupSubscriptionEntity
 import org.schabi.newpipe.databinding.DialogFeedGroupCreateBinding
@@ -566,7 +565,7 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
 
         selectedContentSelectionMask = mask
         wasContentRulesChanged = true
-        normalizeContentOverrides()
+        // Normalize on save; intermediate defaults must not erase channel exceptions.
         updateContentRulesUi()
     }
 
@@ -674,23 +673,10 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
             contentSelectionOverrides[subscriptionId] = editingContentSelectionMask
         }
         wasContentRulesChanged = true
-        normalizeContentOverrides()
         editingContentSelectionMask = 0
         editingRuleOriginalSubscriptions.clear()
         editingRuleSelectedSubscriptions.clear()
         updateContentRulesUi()
-    }
-
-    private fun normalizeContentOverrides() {
-        val normalized = FeedGroupContentRules.normalizeOverrides(
-            selectedContentSelection(),
-            selectedSubscriptions,
-            selectedContentOverrides()
-        )
-        contentSelectionOverrides.clear()
-        normalized.forEach { (subscriptionId, selection) ->
-            contentSelectionOverrides[subscriptionId] = selection.mask
-        }
     }
 
     private fun selectedContentSelection(): FeedContentSelection {

@@ -103,14 +103,13 @@ public final class PlayQueueActivity extends AppCompatActivity
     public boolean onPrepareOptionsMenu(final Menu m) {
         m.findItem(R.id.action_cast_pipepipe)
                 .setVisible(!org.schabi.newpipe.util.DeviceUtils.isTv(this));
-        if (player != null) {
-            menu.findItem(R.id.action_switch_popup)
-                    .setVisible(player.audioPlayerSelected());
-            menu.findItem(R.id.action_switch_main)
-                    .setVisible(player.audioPlayerSelected());
-            menu.findItem(R.id.action_switch_background)
-                    .setVisible(false);
-        }
+        final boolean ready = player != null && player.isModeSwitchReady();
+        m.findItem(R.id.action_switch_popup).setEnabled(ready)
+                .setVisible(player == null || !player.popupPlayerSelected());
+        m.findItem(R.id.action_switch_main).setEnabled(ready)
+                .setVisible(player == null || !player.videoPlayerSelected());
+        m.findItem(R.id.action_switch_background).setEnabled(ready)
+                .setVisible(player == null || !player.audioPlayerSelected());
         return super.onPrepareOptionsMenu(m);
     }
 
@@ -138,20 +137,13 @@ public final class PlayQueueActivity extends AppCompatActivity
             org.schabi.newpipe.cast.CastDialogs.INSTANCE.open(this);
             return true;
         } else if (item.getItemId() == R.id.action_switch_main) {
-            this.player.setRecovery();
-            NavigationHelper.playOnMainPlayer(this, player.getPlayQueue(), true);
+            NavigationHelper.switchPlayerMode(this, player, PlayerService.PlayerType.VIDEO);
             return true;
         } else if (item.getItemId() == R.id.action_switch_popup) {
-            if (PermissionHelper.isPopupEnabled(this)) {
-                this.player.setRecovery();
-                NavigationHelper.playOnPopupPlayer(this, player.getPlayQueue(), true);
-            } else {
-                PermissionHelper.showPopupEnablementToast(this);
-            }
+            NavigationHelper.switchPlayerMode(this, player, PlayerService.PlayerType.POPUP);
             return true;
         } else if (item.getItemId() == R.id.action_switch_background) {
-            this.player.setRecovery();
-            NavigationHelper.playOnBackgroundPlayer(this, player.getPlayQueue(), true);
+            NavigationHelper.switchPlayerMode(this, player, PlayerService.PlayerType.AUDIO);
             return true;
         }
         return super.onOptionsItemSelected(item);
@@ -203,6 +195,8 @@ public final class PlayQueueActivity extends AppCompatActivity
             @Override
             public void onServiceDisconnected(final ComponentName name) {
                 Log.d(TAG, "Player service is disconnected");
+                player = null;
+                invalidateOptionsMenu();
             }
 
             @Override
@@ -225,6 +219,7 @@ public final class PlayQueueActivity extends AppCompatActivity
                     buildComponents();
                     if (player != null) {
                         player.setActivityListener(PlayQueueActivity.this);
+                        invalidateOptionsMenu();
                     }
                 }
             }
@@ -449,12 +444,14 @@ public final class PlayQueueActivity extends AppCompatActivity
 
     @Override
     public void onQueueUpdate(final PlayQueue queue) {
+        invalidateOptionsMenu();
     }
 
     @Override
     public void onPlaybackUpdate(final PlayerPlaybackState state, final RepeatMode repeatMode,
                                  final boolean shuffled,
                                  final PlayerPlaybackParameters parameters) {
+        invalidateOptionsMenu();
         onStateChanged(state);
         onPlayModeChanged(repeatMode, shuffled);
         onPlaybackParameterChanged(parameters);

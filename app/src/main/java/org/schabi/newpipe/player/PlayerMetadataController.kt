@@ -82,6 +82,9 @@ class PlayerMetadataController(private val player: Player) {
                 if (previousInfo == null || previousInfo.url != info.url) {
                     // only update with the new stream info if it has actually changed
                     updateMetadataWith(info)
+                } else {
+                    // Source quality can change without changing the stream URL.
+                    player.updateStreamRelatedViews()
                 }
             }
         }

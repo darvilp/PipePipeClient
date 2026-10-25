@@ -148,6 +148,8 @@ public class PlayerModeSwitchingTest {
         info.setStreamType(StreamType.VIDEO_STREAM);
         info.setDuration(30);
         info.setUploaderName("Synthetic fixture");
+        info.setUploaderUrl("https://www.youtube.com/@SyntheticFixture");
+        info.setThumbnailUrl("");
         info.setDescription(Description.EMPTY_DESCRIPTION);
         info.setAudioStreams(Collections.singletonList(new AudioStream.Builder()
                 .setId("live-idle-vod-audio")
@@ -1104,6 +1106,8 @@ public class PlayerModeSwitchingTest {
                 info.setDuration(30);
                 info.setDescription(Description.EMPTY_DESCRIPTION);
                 info.setUploaderName("Synthetic fixture");
+                info.setUploaderUrl("https://www.youtube.com/@SyntheticFixture");
+                info.setThumbnailUrl("");
                 info.setVideoStreams(Collections.singletonList(new VideoStream.Builder()
                         .setId(streamId).setContent(mediaUrl, true)
                         .setMediaFormat(MediaFormat.MPEG_4).setResolution("144p")
@@ -1162,6 +1166,9 @@ public class PlayerModeSwitchingTest {
                                              final String title, final StreamType type) {
         final StreamInfoItem item = new StreamInfoItem(serviceId, url, title, type);
         item.setUploaderName("Synthetic fixture");
+        item.setUploaderUrl("https://www.youtube.com/@SyntheticFixture");
+        item.setThumbnailUrl("");
+        item.setDuration(30);
         return item;
     }
 

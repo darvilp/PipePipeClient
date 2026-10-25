@@ -90,6 +90,8 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
     private lateinit var subscriptionGroupAdapter: GroupieAdapter
     private var latestMembershipSubscriptions: List<PickerSubscriptionItem> = emptyList()
     private var latestContentRuleSubscriptions: List<PickerSubscriptionItem> = emptyList()
+    private var contentDefaultsLoaded = false
+    private var contentMembershipsLoaded = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -381,6 +383,7 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
     }
 
     private fun handlePositiveButtonInitialScreen() {
+        if (!contentRulesLoaded()) return
         val name = feedGroupCreateBinding.groupNameInput.text.toString().trim()
         val icon = selectedIcon ?: groupIcon ?: FeedGroupIcon.ALL
 
@@ -418,6 +421,7 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
     }
 
     private fun handleGroup(feedGroupEntity: FeedGroupEntity? = null) {
+        contentDefaultsLoaded = true
         val icon = feedGroupEntity?.icon ?: FeedGroupIcon.ALL
         val name = feedGroupEntity?.name ?: ""
         groupIcon = feedGroupEntity?.icon
@@ -467,6 +471,7 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
         contentRuleSubscriptions: List<PickerSubscriptionItem>,
         memberships: List<FeedGroupSubscriptionEntity>
     ) {
+        contentMembershipsLoaded = true
         latestMembershipSubscriptions = membershipSubscriptions
         latestContentRuleSubscriptions = contentRuleSubscriptions
         if (!wasSubscriptionSelectionChanged) {
@@ -583,10 +588,21 @@ class FeedGroupDialog : DialogFragment(), BackPressable {
         return mask
     }
 
+    private fun contentRulesLoaded() = groupId == NO_GROUP_SELECTED
+        || (contentDefaultsLoaded && contentMembershipsLoaded)
+
     private fun updateContentRulesUi() {
         if (_feedGroupCreateBinding == null) {
             return
         }
+
+        val loaded = contentRulesLoaded()
+        listOf(feedGroupCreateBinding.contentRulesButton,
+            feedGroupCreateBinding.defaultContentVideos,
+            feedGroupCreateBinding.defaultContentShorts,
+            feedGroupCreateBinding.defaultContentLive,
+            feedGroupCreateBinding.addContentExceptionButton
+        ).forEach { it.isEnabled = loaded }
 
         val defaultSelection = selectedContentSelection()
         feedGroupCreateBinding.defaultContentVideos.isChecked =

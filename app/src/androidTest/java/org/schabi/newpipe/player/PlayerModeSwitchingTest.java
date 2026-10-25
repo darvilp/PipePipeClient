@@ -26,6 +26,8 @@ import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry;
 import androidx.test.runner.lifecycle.Stage;
 
+import com.google.android.exoplayer2.Timeline;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -44,6 +46,7 @@ import org.schabi.newpipe.extractor.stream.StreamType;
 import org.schabi.newpipe.extractor.stream.VideoStream;
 import org.schabi.newpipe.player.PlayerService.PlayerType;
 import org.schabi.newpipe.player.helper.PlayerHolder;
+import org.schabi.newpipe.player.mediaitem.PlayerMediaItem;
 import org.schabi.newpipe.player.playqueue.PlayQueue;
 import org.schabi.newpipe.player.playqueue.SinglePlayQueue;
 import org.schabi.newpipe.util.DeviceUtils;
@@ -82,7 +85,8 @@ public class PlayerModeSwitchingTest {
             for (final String key : Arrays.asList(sponsor, tabs, selectedTab,
                     context.getString(R.string.always_start_from_beginning_key),
                     context.getString(R.string.start_main_player_fullscreen_key),
-                    context.getString(R.string.rotate_fullscreen_to_video_orientation_key))) {
+                    context.getString(R.string.rotate_fullscreen_to_video_orientation_key),
+                    context.getString(R.string.rotation_controls_fullscreen_key))) {
                 savedPreferences.put(key, preferences.getAll().get(key));
             }
             preferences.edit().putBoolean(sponsor, false)
@@ -121,6 +125,114 @@ public class PlayerModeSwitchingTest {
             assertFalse(original.isLiveIdle());
             assertTrue(original.getPlayWhenReady());
             assertNotNull(field(original, "playQueueManager"));
+        });
+    }
+
+    @Test
+    public void pausedLiveResumeUsesCurrentDefaultPosition() throws Exception {
+        checkPausedLiveResumeUsesCurrentDefaultPosition(false);
+    }
+
+    @Test
+    public void pausedLiveModeSwitchResumesAtCurrentDefaultPosition() throws Exception {
+        checkPausedLiveResumeUsesCurrentDefaultPosition(true);
+    }
+
+    @Test
+    public void vodSelectedWhileLiveIdleKeepsRecoveryPosition() throws Exception {
+        start(PlayerType.AUDIO, false, false, false, false, true);
+        final Player original = activity.player;
+        final PlayQueue queue = original.getPlayQueue();
+        final String url = "https://www.youtube.com/watch?v=ccccccccccc";
+        final StreamInfo info = new StreamInfo(0, url, url, "Audio on demand fixture");
+        info.setStreamType(StreamType.AUDIO_STREAM);
+        info.setDuration(30);
+        info.setUploaderName("Synthetic fixture");
+        info.setDescription(Description.EMPTY_DESCRIPTION);
+        info.setAudioStreams(Collections.singletonList(new AudioStream.Builder()
+                .setId("live-idle-vod-audio")
+                .setContent(Uri.fromFile(copyAsset("player-mode-fixture.m4a")).toString(), true)
+                .setMediaFormat(MediaFormat.M4A).setAverageBitrate(96).build()));
+        final PlayerMediaItem selected = PlayerMediaItem.forQueueItem(info);
+        instrumentation.runOnMainSync(original::pause);
+        await(original::isLiveIdle, "Paused live source must enter idle");
+        instrumentation.runOnMainSync(() -> {
+            assertTrue(PreferenceManager.getDefaultSharedPreferences(main).edit()
+                    .putBoolean(main.getString(R.string.always_start_from_beginning_key), false)
+                    .commit());
+            InfoCache.getInstance().putInfo(0, url, info, InfoItem.InfoType.STREAM);
+            queue.append(selected);
+            original.selectQueueItem(selected);
+            queue.setRecovery(queue.getIndex(), 5000);
+            assertTrue(original.isLiveIdle());
+            assertNull(field(original, "playQueueManager"));
+            assertEquals(StreamType.LIVE_STREAM,
+                    original.getCurrentStreamInfo().get().getStreamType());
+            original.play();
+        });
+        await(() -> original.simpleExoPlayer.getPlaybackState()
+                == com.google.android.exoplayer2.Player.STATE_READY
+                && original.getCurrentItem() == selected, "Selected audio on demand prepares");
+        instrumentation.runOnMainSync(() -> {
+            original.pause();
+            assertFalse(original.isLiveIdle());
+            assertSame(queue, original.getPlayQueue());
+            assertSame(selected, queue.getItem());
+            assertEquals(url, original.getCurrentStreamInfo().get().getUrl());
+            assertEquals("Selected VOD must retain its five-second recovery",
+                    5000, original.getCurrentPosition(), 750);
+        });
+    }
+
+    private void checkPausedLiveResumeUsesCurrentDefaultPosition(final boolean switchMode)
+            throws Exception {
+        instrumentation.runOnMainSync(() -> {
+            final android.content.Context context = instrumentation.getTargetContext();
+            assertTrue(PreferenceManager.getDefaultSharedPreferences(context).edit()
+                    .putBoolean(context.getString(R.string.always_start_from_beginning_key), false)
+                    .commit());
+        });
+        start(PlayerType.AUDIO, false, false, false, false, true);
+        final Player original = activity.player;
+        final PlayQueue queue = original.getPlayQueue();
+        final PlayerMediaItem selected = queue.getItem();
+        await(() -> original.getCurrentPosition() >= 4000,
+                "Live playback must reach four seconds before pause");
+        instrumentation.runOnMainSync(original::pause);
+        await(original::isLiveIdle, "Paused live source must enter idle");
+        instrumentation.runOnMainSync(() -> {
+            assertNull(field(original, "playQueueManager"));
+            assertFalse(original.getPlayWhenReady());
+            if (switchMode) {
+                final Menu menu = new MenuBuilder(activity);
+                activity.onCreateOptionsMenu(menu);
+                activity.onOptionsItemSelected(menu.findItem(R.id.action_switch_popup));
+            }
+            assertEquals(switchMode ? PlayerType.POPUP : PlayerType.AUDIO,
+                    original.getPlayerType());
+            assertSame(queue, original.getPlayQueue());
+            assertSame(selected, queue.getItem());
+            assertEquals(0, queue.getIndex());
+            assertTrue(original.isLiveIdle());
+            assertFalse(original.getPlayWhenReady());
+            assertNull("A mode change must not resurrect a paused live source",
+                    field(original, "playQueueManager"));
+            original.play();
+        });
+        await(() -> original.simpleExoPlayer.getPlaybackState()
+                == com.google.android.exoplayer2.Player.STATE_READY
+                && original.getCurrentItem() == selected, "Current live item resumes");
+        instrumentation.runOnMainSync(() -> {
+            assertFalse(original.isLiveIdle());
+            assertTrue(original.getPlayWhenReady());
+            assertNotNull(field(original, "playQueueManager"));
+            assertSame(queue, original.getPlayQueue());
+            assertSame(selected, queue.getItem());
+            final Timeline.Window window = new Timeline.Window();
+            original.simpleExoPlayer.getCurrentTimeline().getWindow(
+                    original.simpleExoPlayer.getCurrentMediaItemIndex(), window);
+            assertEquals("Live playback must resume at the current default position",
+                    window.getDefaultPositionMs(), original.getCurrentPosition(), 750);
         });
     }
 
@@ -408,7 +520,9 @@ public class PlayerModeSwitchingTest {
         final Player original = activity.player;
         instrumentation.runOnMainSync(() -> PreferenceManager.getDefaultSharedPreferences(main)
                 .edit().putBoolean(main.getString(
-                        R.string.rotate_fullscreen_to_video_orientation_key), true).commit());
+                        R.string.rotate_fullscreen_to_video_orientation_key), true)
+                .putBoolean(main.getString(R.string.rotation_controls_fullscreen_key), false)
+                .commit());
         selectMode(PlayerType.VIDEO);
         await(() -> original.videoPlayerSelected() && original.getParentActivity() != null,
                 "Main attached before scrolling");
@@ -452,7 +566,7 @@ public class PlayerModeSwitchingTest {
                     + visible + ", windowHeight=" + windowHeight + ", appBarTop="
                     + host.findViewById(R.id.app_bar_layout).getTop(),
                     videoVisible && visible.height() >= windowHeight * 0.9);
-            assertSame(host.findViewById(R.id.player_placeholder),
+            assertSame(host.findViewById(R.id.fullscreen_player_container),
                     original.getRootView().getParent());
             assertSame(engine, original.simpleExoPlayer);
             assertSame(queue, original.getPlayQueue());
@@ -465,6 +579,14 @@ public class PlayerModeSwitchingTest {
         final com.google.android.material.bottomsheet.BottomSheetBehavior<android.view.View> sheet =
                 com.google.android.material.bottomsheet.BottomSheetBehavior.from(
                         host.findViewById(R.id.fragment_player_holder));
+        // First-layout restoration can otherwise overwrite this explicit collapse.
+        await(() -> ActivityLifecycleMonitorRegistry.getInstance().getLifecycleStageOf(host)
+                == Stage.RESUMED
+                && host.findViewById(R.id.fragment_player_holder).isLaidOut()
+                && host.findViewById(R.id.detail_thumbnail_image_view).getHeight() > 0
+                && sheet.getState()
+                != com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_SETTLING,
+                "Main detail layout restored before collapse");
         instrumentation.runOnMainSync(() -> sheet.setState(
                 com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED));
         await(() -> sheet.getState()

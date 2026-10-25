@@ -239,7 +239,7 @@ public final class InternalUrlsHandler {
                 .subscribe(info -> {
                     final PlayQueue playQueue
                             = new SinglePlayQueue(info, seconds * 1000L);
-                    if (player != null && player.videoPlayerSelected()
+                    if (player != null
                             && player.getPlayQueue() != null
                             && player.getPlayQueue().getItem() != null
                             && !cleanUrl.equals(player.getPlayQueue().getItem().getUrl())) {

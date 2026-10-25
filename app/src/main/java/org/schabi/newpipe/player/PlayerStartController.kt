@@ -28,7 +28,7 @@ class PlayerStartController(private val player: Player) {
 
     fun cancelModeRequest() {
         pendingMainModeRequest = 0L
-        player.sourceController.modeSwitchRecoveryItem = null
+        player.sourceController.sourceSwitchRecoveryItem = null
     }
 
     fun requestMainPlaybackMode(): Long {

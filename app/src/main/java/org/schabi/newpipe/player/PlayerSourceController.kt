@@ -17,7 +17,7 @@ import org.schabi.newpipe.player.resolver.VideoPlaybackResolver.SourceType
  */
 class PlayerSourceController(private val player: Player) {
 
-    var modeSwitchRecoveryItem: org.schabi.newpipe.player.mediaitem.PlayerMediaItem? = null
+    var sourceSwitchRecoveryItem: org.schabi.newpipe.player.mediaitem.PlayerMediaItem? = null
 
     var isMainPlayerDetailsBrowsing = false
 
@@ -62,9 +62,9 @@ class PlayerSourceController(private val player: Player) {
             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !videoEnabled)
             .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !videoEnabled))
         if (reload && !player.isLiveIdle) {
-            if (modeSwitch && playQueue.index == player.simpleExoPlayer.currentMediaItemIndex
+            if (playQueue.index == player.simpleExoPlayer.currentMediaItemIndex
                 && (player.currentItem == null || player.currentItem == playQueue.item)) {
-                modeSwitchRecoveryItem = playQueue.item
+                sourceSwitchRecoveryItem = playQueue.item
                 if (keepLiveEdge) playQueue.unsetRecovery(playQueue.index)
             }
             player.reloadPlayQueueManager()

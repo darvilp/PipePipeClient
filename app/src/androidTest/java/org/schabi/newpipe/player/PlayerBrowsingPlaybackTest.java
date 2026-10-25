@@ -251,7 +251,8 @@ public class PlayerBrowsingPlaybackTest {
         assertTrue("Source reload must preserve nonzero progress: " + position,
                 position >= before[0] - 1000);
         assertTrue("Source reload must not jump forward: " + position,
-                position <= before[0] + SystemClock.elapsedRealtime() - before[1] + 1000);
+                position <= before[0] + (SystemClock.elapsedRealtime() - before[1])
+                        * engine.getPlaybackParameters().speed + 1000);
     }
 
     private void start(final boolean alwaysStartFromBeginning) throws Exception {
@@ -350,6 +351,10 @@ public class PlayerBrowsingPlaybackTest {
         instrumentation.runOnMainSync(() -> {
             disposables.clear();
             if (startedPlayback) {
+                final Player active = PlayerHolder.getInstance().getPlayer();
+                if (active != null) {
+                    active.service.stopService();
+                }
                 PlayerHolder.getInstance().stopService();
                 main.stopService(new Intent(main, DeviceUtils.getPlayerServiceClass()));
             }

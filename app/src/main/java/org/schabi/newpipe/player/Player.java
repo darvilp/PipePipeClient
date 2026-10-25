@@ -481,10 +481,9 @@ public final class Player {
         final long windowPos = simpleExoPlayer.getCurrentPosition();
         final long duration = simpleExoPlayer.getDuration();
 
-        final long newPos =  Math.max(0, Math.min(windowPos, duration));
-        if(newPos > 0) {
-            setRecovery(queuePos, newPos);
-        }
+        final long newPos = Math.max(0, duration == C.TIME_UNSET
+                ? windowPos : Math.min(windowPos, duration));
+        setRecovery(queuePos, newPos);
     }
 
     private void setRecovery(final int queuePos, final long windowPos) {

@@ -5,7 +5,7 @@
   "upstream_release": "v5.5.0",
   "upstream_client_commit": "b91f008fb4d25b470c4383dcf42e31ee7696d272",
   "extractor_repository": "https://github.com/darvilp/PipePipeExtractor.git",
-  "extractor_commit": "1a09d20e68dbd0892995bc58ffa539049a656690",
+  "extractor_commit": "423177865a15a819175fe4836ea70ffc9207bd81",
   "ffmpeg_aar_sha256": "19d064dd952a51dd3015007007bf7740c66ce65c09812abbe573a3ec6858f968",
   "gradle_version": "9.5.1",
   "java_version": 25,

@@ -14,6 +14,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.text.HtmlCompat;
 
+import org.schabi.newpipe.player.event.DetailPlayerEvents;
 import org.schabi.newpipe.extractor.Info;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.schabi.newpipe.util.NavigationHelper;

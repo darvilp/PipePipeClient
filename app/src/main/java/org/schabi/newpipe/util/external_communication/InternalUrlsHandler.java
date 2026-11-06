@@ -1,7 +1,6 @@
 package org.schabi.newpipe.util.external_communication;
 
 import android.content.Context;
-import android.content.Intent;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -17,6 +16,7 @@ import org.schabi.newpipe.extractor.exceptions.ExtractionException;
 import org.schabi.newpipe.extractor.exceptions.ParsingException;
 import org.schabi.newpipe.extractor.linkhandler.LinkHandlerFactory;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
+import org.schabi.newpipe.player.event.DetailPlayerEvents;
 import org.schabi.newpipe.player.playqueue.PlayQueue;
 import org.schabi.newpipe.player.playqueue.SinglePlayQueue;
 import org.schabi.newpipe.player.Player;
@@ -33,7 +33,6 @@ import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 
-import static org.schabi.newpipe.fragments.detail.VideoDetailFragment.ACTION_SEEK_TO;
 
 public final class InternalUrlsHandler {
     private static final String TAG = InternalUrlsHandler.class.getSimpleName();
@@ -104,9 +103,7 @@ public final class InternalUrlsHandler {
                                               @NonNull final Pattern pattern,
                                               @NonNull final CompositeDisposable disposables) {
         if(url.contains("internal://timestamp/")) {
-            Intent intent = new Intent(ACTION_SEEK_TO);
-            intent.putExtra("Timestamp", Integer.parseInt(url.split("internal://timestamp/")[1]));
-            context.sendBroadcast(intent);
+            DetailPlayerEvents.seekTo(Integer.parseInt(url.split("internal://timestamp/")[1]));
             return true;
         }
         final Matcher matcher = pattern.matcher(url);
@@ -139,9 +136,7 @@ public final class InternalUrlsHandler {
                 && !activeQueue.isDisposed() && activeQueue.getItem() != null
                 && activeQueue.getItem().getServiceId() == service.getServiceId()
                 && matchedUrl.equals(activeQueue.getItem().getUrl())) {
-            final Intent seek = new Intent(ACTION_SEEK_TO);
-            seek.putExtra("Timestamp", seconds);
-            context.sendBroadcast(seek);
+            DetailPlayerEvents.seekTo(seconds);
             return true;
         }
 

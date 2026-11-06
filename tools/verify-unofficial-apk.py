@@ -33,7 +33,7 @@ require(attributes['versionName'] == manifest['version_name'], 'Unexpected versi
 require(int(attributes['versionCode']) == version_code, 'Unexpected ABI version code')
 require('application-debuggable' not in badging, 'Release APK is debuggable')
 require("application-label:'PipePipe All Features (Unofficial)'" in badging, 'Unexpected app label')
-require("sdkVersion:'23'" in badging and "targetSdkVersion:'36'" in badging, 'Unexpected SDK range')
+require("sdkVersion:'24'" in badging and "targetSdkVersion:'36'" in badging, 'Unexpected SDK range')
 with zipfile.ZipFile(args.apk) as archive:
     native_abis = {name.split('/')[1] for name in archive.namelist()
                    if name.startswith('lib/') and name.endswith('.so')}

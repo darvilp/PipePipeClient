@@ -11,8 +11,8 @@ import android.os.IBinder;
 import android.view.LayoutInflater;
 
 import androidx.appcompat.view.ContextThemeWrapper;
-import androidx.fragment.app.Fragment;
-import androidx.fragment.app.FragmentHostCallback;
+import androidx.test.core.app.ActivityScenario;
+import org.schabi.newpipe.MainActivity;
 import androidx.preference.PreferenceManager;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
@@ -49,7 +49,8 @@ public class BrowsingOverlayMetadataTest {
     }
 
     private static void checkMetadata(final PlayerType type, final String expectedTitle) {
-        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+        scenario.onActivity(activity -> {
             final Context context = new ContextThemeWrapper(
                     InstrumentationRegistry.getInstrumentation().getTargetContext(), R.style.LightTheme);
             final android.content.SharedPreferences prefs =
@@ -68,32 +69,27 @@ public class BrowsingOverlayMetadataTest {
                                         ? service : method.getReturnType() == boolean.class ? false : null);
                 player = new Player(serviceInterface);
                 setField(Player.class, player, "playerType", type);
-                final VideoDetailFragment fragment = VideoDetailFragment.getInstance(
-                        0, "X", "Details X", new SinglePlayQueue(item("X")));
-                final FragmentHostCallback<Object> host =
-                        new FragmentHostCallback<Object>(context, new Handler(), 0) {
-                            @Override
-                            public Object onGetHost() {
-                                return this;
-                            }
-                        };
-                setField(Fragment.class, fragment, "mHost", host);
-                final FragmentVideoDetailBinding binding =
-                        FragmentVideoDetailBinding.inflate(LayoutInflater.from(context));
-                setField(VideoDetailFragment.class, fragment, "binding", binding);
-                setField(VideoDetailFragment.class, fragment, "player", player);
+                final VideoDetailFragment fragment = VideoDetailFragment.getInstanceInCollapsedState();
+                activity.getSupportFragmentManager().beginTransaction()
+                        .replace(R.id.fragment_player_holder, fragment).commitNow();
+                final FragmentVideoDetailBinding binding = (FragmentVideoDetailBinding)
+                        getField(VideoDetailFragment.class, fragment, "_binding");
+                final VideoDetailViewModel model = (VideoDetailViewModel)
+                        getField(VideoDetailFragment.class, fragment, "vm");
+                model.setInitialData(0, "X", "Details X", new SinglePlayQueue(item("X")));
                 final StreamInfo details = new StreamInfo(0, "X", "X", "Details X");
-                setField(VideoDetailFragment.class, fragment, "currentInfo", details);
-                binding.overlayTitleTextView.setText("A");
+                model.setCurrentInfo(details);
+                setField(VideoDetailFragment.class, fragment, "player", player);
+                binding.overlayLayout.overlayTitleTextView.setText("A");
                 final PlayQueue active = new SinglePlayQueue(Arrays.asList(item("A"), item("B")), 1);
                 final StreamInfo metadata = new StreamInfo(0, "B", "B", "B");
                 metadata.setUploaderName("Uploader B");
                 fragment.onMetadataUpdate(metadata, active);
-                assertEquals(expectedTitle, binding.overlayTitleTextView.getText().toString());
-                assertEquals("X", fragment.url);
-                assertSame(details, getField(VideoDetailFragment.class, fragment, "currentInfo"));
+                assertEquals(expectedTitle, binding.overlayLayout.overlayTitleTextView.getText().toString());
+                assertEquals("X", model.getUrl());
+                assertSame(details, model.getCurrentInfo());
                 if (type == PlayerType.VIDEO) {
-                    assertEquals("Uploader B", binding.overlayChannelTextView.getText().toString());
+                    assertEquals("Uploader B", binding.overlayLayout.overlayChannelTextView.getText().toString());
                 }
             } catch (final ReflectiveOperationException error) {
                 throw new AssertionError(error);
@@ -113,6 +109,7 @@ public class BrowsingOverlayMetadataTest {
                 }
             }
         });
+        }
     }
 
     private static StreamInfoItem item(final String url) {

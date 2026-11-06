@@ -1,7 +1,6 @@
 package org.schabi.newpipe.player;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 
 import android.app.Service;
@@ -23,7 +22,6 @@ import org.junit.runner.RunWith;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 import org.schabi.newpipe.extractor.stream.StreamType;
 import org.schabi.newpipe.player.mediasession.PlayerServiceInterface;
-import org.schabi.newpipe.player.playback.PlayerMediaSession;
 import org.schabi.newpipe.player.playqueue.SinglePlayQueue;
 
 import java.lang.reflect.Field;
@@ -69,15 +67,6 @@ public class PlayerDiscontinuityRegressionTest {
                 player.destroy();
                 ((DefaultTrackSelector) getField("trackSelector")).release();
             }
-        });
-    }
-
-    @Test
-    public void chatPanelCleanupHandlesUninitializedViews() {
-        onMain(() -> {
-            assertNull(player.getBinding());
-            player.getBulletCommentsController().getChatPanel().release();
-            player.getBulletCommentsController().getChatPanel().release();
         });
     }
 
@@ -130,23 +119,6 @@ public class PlayerDiscontinuityRegressionTest {
             assertEquals("Timeline maintenance must not reset the explicit selection", 1,
                     queue.getIndex());
             assertSame(selected, queue.getItem());
-        });
-    }
-
-    @Test
-    public void queueMetadataHandlesOptionalThumbnails() {
-        onMain(() -> {
-            final StreamInfoItem empty = item("empty-thumbnail");
-            empty.setThumbnailUrl("");
-            final StreamInfoItem present = item("with-thumbnail");
-            present.setThumbnailUrl("https://example.invalid/thumbnail.jpg");
-            queue.append(new SinglePlayQueue(Arrays.asList(empty, present), 0).getStreams());
-            final PlayerMediaSession session = new PlayerMediaSession(player, player.simpleExoPlayer);
-
-            assertNull(session.getQueueMetadata(0).getIconUri());
-            assertNull(session.getQueueMetadata(3).getIconUri());
-            assertEquals(present.getThumbnailUrl(),
-                    session.getQueueMetadata(4).getIconUri().toString());
         });
     }
 

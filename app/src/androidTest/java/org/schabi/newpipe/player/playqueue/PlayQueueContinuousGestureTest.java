@@ -114,8 +114,12 @@ public class PlayQueueContinuousGestureTest {
             main(() -> {
                 final List<StreamInfoItem> items = new ArrayList<>();
                 for (int index = 0; index < 80; index++) {
-                    items.add(new StreamInfoItem(0, "https://example.invalid/gesture/" + index,
-                            "Gesture row " + index, StreamType.VIDEO_STREAM));
+                    final StreamInfoItem item = new StreamInfoItem(0,
+                            "https://example.invalid/gesture/" + index,
+                            "Gesture row " + index, StreamType.VIDEO_STREAM);
+                    item.setUploaderName("Gesture fixture uploader");
+                    item.setThumbnailUrl("");
+                    items.add(item);
                 }
                 queue = new SinglePlayQueue(items, 0);
                 queue.init();
@@ -246,7 +250,8 @@ public class PlayQueueContinuousGestureTest {
         private void frames(final int count) {
             for (int frame = 0; frame < count; frame++) {
                 SystemClock.sleep(16);
-                instrumentation.waitForIdleSync();
+                // Continuous edge scrolling schedules frames until the gesture ends.
+                main(() -> { });
             }
         }
 

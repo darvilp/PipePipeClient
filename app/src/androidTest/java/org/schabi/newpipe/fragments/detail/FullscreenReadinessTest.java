@@ -90,7 +90,7 @@ public class FullscreenReadinessTest {
                 setField(Player.class, player, "isPrepared", true);
                 final VideoDetailFragment fragment = VideoDetailFragment.getInstance(
                         0, "A", "A", null);
-                setField(VideoDetailFragment.class, fragment, "binding",
+                setField(VideoDetailFragment.class, fragment, "_binding",
                         FragmentVideoDetailBinding.inflate(LayoutInflater.from(context)));
                 final PlayerServiceEventListener listener = (PlayerServiceEventListener)
                         Proxy.newProxyInstance(PlayerServiceEventListener.class.getClassLoader(),

@@ -557,6 +557,34 @@ public class PlayerModeSwitchingTest {
                         original.getParentActivity().findViewById(R.id.detail_video_title_view))
                         .getText()), "Fullscreen main recreated with details in landscape");
         instrumentation.waitForIdleSync();
+        // Fullscreen now stays inside the sheet, whose restored offset settles after attachment.
+        final String[] initialGeometry = {null};
+        await(() -> {
+            final Activity host = original.getParentActivity();
+            if (host == null) {
+                return false;
+            }
+            final android.graphics.Rect visible = new android.graphics.Rect();
+            final boolean videoVisible = original.getSurfaceView().getGlobalVisibleRect(visible);
+            final int windowHeight = host.getWindow().getDecorView().getHeight();
+            final int sheetState = com.google.android.material.bottomsheet.BottomSheetBehavior
+                    .from(host.findViewById(R.id.fragment_player_holder)).getState();
+            final String geometry = "sheet=" + sheetState + ", rect=" + visible
+                    + ", windowHeight=" + windowHeight;
+            if (initialGeometry[0] == null) {
+                initialGeometry[0] = geometry;
+            }
+            final boolean ready = sheetState
+                    == com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+                    && videoVisible && visible.height() >= windowHeight * 0.9;
+            if (ready) {
+                final android.os.Bundle state = new android.os.Bundle();
+                state.putString("initialFullscreenGeometry", initialGeometry[0]);
+                state.putString("settledFullscreenGeometry", geometry);
+                instrumentation.sendStatus(0, state);
+            }
+            return ready;
+        }, "Fullscreen layout did not fill the expanded sheet after rotation");
         instrumentation.runOnMainSync(() -> {
             final Activity host = original.getParentActivity();
             final android.graphics.Rect visible = new android.graphics.Rect();
@@ -566,7 +594,7 @@ public class PlayerModeSwitchingTest {
                     + visible + ", windowHeight=" + windowHeight + ", appBarTop="
                     + host.findViewById(R.id.app_bar_layout).getTop(),
                     videoVisible && visible.height() >= windowHeight * 0.9);
-            assertSame(host.findViewById(R.id.fullscreen_player_container),
+            assertSame(host.findViewById(R.id.player_placeholder),
                     original.getRootView().getParent());
             assertSame(engine, original.simpleExoPlayer);
             assertSame(queue, original.getPlayQueue());

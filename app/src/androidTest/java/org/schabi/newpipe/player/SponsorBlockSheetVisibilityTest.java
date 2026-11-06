@@ -30,7 +30,8 @@ import org.schabi.newpipe.databinding.PlayerBinding;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 import org.schabi.newpipe.extractor.stream.StreamType;
-import org.schabi.newpipe.fragments.detail.TabAdapter;
+import org.schabi.newpipe.fragments.detail.DetailTestState;
+import org.schabi.newpipe.fragments.detail.VideoDetailViewModel;
 import org.schabi.newpipe.fragments.detail.VideoDetailFragment;
 import org.schabi.newpipe.fragments.list.sponsorblock.SponsorBlockFragment;
 import org.schabi.newpipe.fragments.list.sponsorblock.SponsorBlockFragmentListener;
@@ -64,7 +65,7 @@ public class SponsorBlockSheetVisibilityTest {
             final AtomicReference<BottomSheetBehavior<?>> sheet = new AtomicReference<>();
             scenario.onActivity(activity -> {
                 final VideoDetailFragment parent = VideoDetailFragment.getInstanceInCollapsedState();
-                set(VideoDetailFragment.class, parent, "bottomSheetState", BottomSheetBehavior.STATE_COLLAPSED);
+                set(VideoDetailFragment.class, parent, "sheetStateToSave", BottomSheetBehavior.STATE_COLLAPSED);
                 activity.getSupportFragmentManager().beginTransaction()
                         .replace(R.id.fragment_player_holder, parent, "sheet-hold-test").commitNow();
                 host.set(parent);
@@ -98,19 +99,31 @@ public class SponsorBlockSheetVisibilityTest {
                 set(metadata.getClass(), metadata, "currentMetadata", queue.getItem());
                 set(VideoDetailFragment.class, parent, "player", player);
                 set(VideoDetailFragment.class, parent, "playerService", serviceInterface);
-                set(VideoDetailFragment.class, parent, "serviceId", 0);
-                set(VideoDetailFragment.class, parent, "url", url);
+                final VideoDetailViewModel model = DetailTestState.model(parent);
+                model.setInitialData(0, url, "Sheet fixture", null);
                 final StreamInfo info = new StreamInfo(0, url, url, "Sheet fixture");
                 info.setStreamType(StreamType.VIDEO_STREAM);
                 info.setDuration(60);
-                set(VideoDetailFragment.class, parent, "currentInfo", info);
+                model.setCurrentInfo(info);
                 final SponsorBlockFragment child = new SponsorBlockFragment(info);
-                child.setListener(new SponsorBlockFragmentListener() {
+                DetailTestState.showEditor(parent, child, 402L);
+                final FragmentVideoDetailBinding binding = (FragmentVideoDetailBinding)
+                        get(VideoDetailFragment.class, parent, "_binding");
+                hostViews.set(binding);
+                binding.detailThumbnailRootLayout.playerPlaceholder.addView(playerBinding.getRoot());
+                binding.viewPager.setVisibility(View.VISIBLE);
+                editor.set(child);
+                sheet.set(BottomSheetBehavior.from(activity.findViewById(R.id.fragment_player_holder)));
+                sheet.get().setState(BottomSheetBehavior.STATE_EXPANDED);
+            });
+            awaitSheet(scenario, sheet.get(), BottomSheetBehavior.STATE_EXPANDED);
+            scenario.onActivity(activity -> {
+                editor.get().setListener(new SponsorBlockFragmentListener() {
                     @Override public Long getSponsorBlockPosition(String video) { return 1000L; }
                     @Override public Long getSponsorBlockDuration(String video) { return 60000L; }
                     @Override public void onSponsorBlockEditingChanged(Object owner, String video,
                                                                        boolean held) {
-                        player.setSponsorBlockEditing(owner, video, held);
+                        playing.get().setSponsorBlockEditing(owner, video, held);
                     }
                     @Override public void onSkippingEnabledChanged(boolean enabled) { }
                     @Override public void onRequestNewPendingSegment(int service, String video,
@@ -120,21 +133,7 @@ public class SponsorBlockSheetVisibilityTest {
                                                                         SponsorBlockSegment segment) { }
                     @Override public void onSeekToRequested(long position) { }
                 });
-                final TabAdapter tabs = new TabAdapter(parent.getChildFragmentManager());
-                tabs.addFragment(child, "SPONSOR_BLOCK TAB");
-                set(VideoDetailFragment.class, parent, "pageAdapter", tabs);
-                final FragmentVideoDetailBinding binding = (FragmentVideoDetailBinding)
-                        get(VideoDetailFragment.class, parent, "binding");
-                hostViews.set(binding);
-                binding.playerPlaceholder.addView(playerBinding.getRoot());
-                binding.viewPager.setAdapter(tabs);
-                binding.viewPager.setVisibility(View.VISIBLE);
-                editor.set(child);
-                sheet.set(BottomSheetBehavior.from(activity.findViewById(R.id.fragment_player_holder)));
-                sheet.get().setState(BottomSheetBehavior.STATE_EXPANDED);
-            });
-            awaitSheet(scenario, sheet.get(), BottomSheetBehavior.STATE_EXPANDED);
-            scenario.onActivity(activity -> {
+                editor.get().refreshEditor();
                 assertTrue(editor.get().isResumed());
                 assertTrue(editor.get().getUserVisibleHint());
                 editor.get().requireView().findViewById(R.id.sponsor_block_controls_mark_segment_start)
@@ -142,9 +141,9 @@ public class SponsorBlockSheetVisibilityTest {
                 assertTrue(playing.get().simpleExoPlayer.getPauseAtEndOfMediaItems());
                 if (fullscreen) {
                     setFullscreenHost(host.get(), playing.get(), true);
-                    assertSame(hostViews.get().fullscreenPlayerContainer,
+                    assertSame(hostViews.get().detailThumbnailRootLayout.playerPlaceholder,
                             playing.get().getRootView().getParent());
-                    assertEquals(View.VISIBLE, hostViews.get().fullscreenPlayerContainer.getVisibility());
+                    assertEquals(View.VISIBLE, hostViews.get().detailThumbnailRootLayout.playerPlaceholder.getVisibility());
                 } else {
                     sheet.get().setState(BottomSheetBehavior.STATE_COLLAPSED);
                 }
@@ -160,9 +159,10 @@ public class SponsorBlockSheetVisibilityTest {
                         playing.get().simpleExoPlayer.getPauseAtEndOfMediaItems());
                 if (fullscreen) {
                     setFullscreenHost(host.get(), playing.get(), false);
-                    assertSame(hostViews.get().playerPlaceholder,
+                    assertSame(hostViews.get().detailThumbnailRootLayout.playerPlaceholder,
                             playing.get().getRootView().getParent());
-                    assertEquals(View.GONE, hostViews.get().fullscreenPlayerContainer.getVisibility());
+                    assertEquals(View.VISIBLE,
+                            hostViews.get().detailThumbnailRootLayout.playerPlaceholder.getVisibility());
                 } else {
                     sheet.get().setState(BottomSheetBehavior.STATE_EXPANDED);
                 }
@@ -182,7 +182,7 @@ public class SponsorBlockSheetVisibilityTest {
 
     private static void setFullscreenHost(final VideoDetailFragment host, final Player player,
                                           final boolean fullscreen) {
-        // Control orientation state while exercising the real host callback and player reparenting.
+        // Control orientation state while exercising the real host callback.
         set(PlayerUiModeController.class, player.getUiModeController(), "isFullscreen", fullscreen);
         host.onFullscreenStateChanged(fullscreen);
     }

@@ -10,8 +10,8 @@ def keyPath = System.getenv("KEY_PATH")
 def keyStorePassword = System.getenv("KEY_STORE_PASSWORD")
 def signingKeyAlias = System.getenv("KEY_ALIAS")
 def signingKeyPassword = System.getenv("KEY_PASSWORD")
-def baseVersionCode = 1123
-def appVersionName = "5.5.0-unofficial.16"
+def baseVersionCode = 1124
+def appVersionName = "5.5.0-unofficial.17"
 def abiCodes = ['armeabi-v7a': 1, 'x86': 2, 'x86_64': 3, 'arm64-v8a': 4]
 def stableBuildConfigVersionCode =
         (100 * baseVersionCode) + abiCodes['armeabi-v7a']
@@ -21,7 +21,7 @@ android {
 
     defaultConfig {
         applicationId "InfinityLoop1309.NewPipeEnhanced"
-        minSdk 23
+        minSdk 24
         //noinspection OldTargetApi,ExpiredTargetSdkVersion
         targetSdk 36
         versionCode baseVersionCode
@@ -298,4 +298,10 @@ dependencies {
     androidTestImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'org.bouncycastle:bcprov-jdk18on:1.85'
     androidTestImplementation "androidx.room:room-testing:${androidxRoomVersion}"
+}
+
+// Plugins use java.time / streams through the desugared library (j$.*). By default L8 only
+// keeps the j$ classes the app itself uses (in debug builds too), so keep all of them for plugins.
+tasks.withType(com.android.build.gradle.internal.tasks.L8DexDesugarLibTask).configureEach {
+    keepRulesConfigurations.add('-keep class j$.** { *; }')
 }

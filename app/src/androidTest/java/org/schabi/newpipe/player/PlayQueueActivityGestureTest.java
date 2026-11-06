@@ -76,8 +76,12 @@ public class PlayQueueActivityGestureTest {
         instrumentation.runOnMainSync(() -> {
             final List<StreamInfoItem> items = new ArrayList<>();
             for (int i = 0; i < 80; i++) {
-                items.add(new StreamInfoItem(0, "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
-                        "Queue probe row " + i, StreamType.VIDEO_STREAM));
+                final StreamInfoItem item = new StreamInfoItem(0,
+                        "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+                        "Queue probe row " + i, StreamType.VIDEO_STREAM);
+                item.setUploaderName("Queue probe uploader");
+                item.setThumbnailUrl("");
+                items.add(item);
             }
             NavigationHelper.playOnBackgroundPlayer(mainActivity,
                     new SinglePlayQueue(items, playingIndex), false);

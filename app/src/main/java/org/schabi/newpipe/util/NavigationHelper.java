@@ -1,6 +1,5 @@
 package org.schabi.newpipe.util;
 
-import static org.schabi.newpipe.util.external_communication.ShareUtils.installApp;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
@@ -55,6 +54,7 @@ import org.schabi.newpipe.player.PlayerService;
 import org.schabi.newpipe.player.PlayerService.PlayerType;
 import org.schabi.newpipe.player.PlayQueueActivity;
 import org.schabi.newpipe.player.Player;
+import org.schabi.newpipe.player.event.DetailPlayerEvents;
 import org.schabi.newpipe.player.helper.MainPlayerQueueBrowsingPolicy;
 import org.schabi.newpipe.player.helper.MainPlayerQueueBrowsingPolicy.Relation;
 import org.schabi.newpipe.player.helper.PlayerHelper;
@@ -188,15 +188,23 @@ public final class NavigationHelper {
     public static void playOnMainPlayer(final Context context,
                                         @NonNull final PlayQueue playQueue,
                                         final boolean switchingPlayers) {
+        playOnMainPlayer(context, playQueue, switchingPlayers, false);
+    }
+
+    public static void playOnMainPlayer(final Context context,
+                                        @NonNull final PlayQueue playQueue,
+                                        final boolean switchingPlayers,
+                                        final boolean forcePlayFullscreen) {
         if (switchingPlayers) {
-            switchPlayerMode(context, PlayerHolder.getInstance().getPlayer(), PlayerType.VIDEO);
+            switchPlayerMode(context, PlayerHolder.getInstance().getPlayer(), PlayerType.VIDEO,
+                    forcePlayFullscreen || PlayerHelper.isStartMainPlayerFullscreenEnabled(context));
             return;
         }
         final PlayerMediaItem item = playQueue.getItem();
         if (item != null) {
             openVideoDetail(context,
                     item.getServiceId(), item.getUrl(), item.getTitle(), playQueue,
-                    switchingPlayers);
+                    switchingPlayers, forcePlayFullscreen);
         }
     }
 
@@ -426,19 +434,19 @@ public final class NavigationHelper {
                 .commit();
     }
 
-    public static void expandMainPlayer(final Context context) {
-        context.sendBroadcast(new Intent(VideoDetailFragment.ACTION_SHOW_MAIN_PLAYER));
+    public static void expandMainPlayer() {
+        DetailPlayerEvents.showMainPlayer();
     }
 
-    public static void sendPlayerStartedEvent(final Context context) {
-        context.sendBroadcast(new Intent(VideoDetailFragment.ACTION_PLAYER_STARTED));
+    public static void sendPlayerStartedEvent() {
+        DetailPlayerEvents.playerStarted();
     }
 
     public static void showMiniPlayer(final FragmentManager fragmentManager) {
         final VideoDetailFragment instance = VideoDetailFragment.getInstanceInCollapsedState();
         defaultTransaction(fragmentManager)
                 .replace(R.id.fragment_player_holder, instance)
-                .runOnCommit(() -> sendPlayerStartedEvent(instance.requireActivity()))
+                .runOnCommit(NavigationHelper::sendPlayerStartedEvent)
                 .commitAllowingStateLoss();
     }
 
@@ -453,11 +461,23 @@ public final class NavigationHelper {
                                                @NonNull final String title,
                                                @Nullable final PlayQueue playQueue,
                                                final boolean switchingPlayers) {
+        openVideoDetailFragment(context, fragmentManager, serviceId, url, title, playQueue,
+                switchingPlayers, false);
+    }
+
+    public static void openVideoDetailFragment(@NonNull final Context context,
+                                               @NonNull final FragmentManager fragmentManager,
+                                               final int serviceId,
+                                               @Nullable final String url,
+                                               @NonNull final String title,
+                                               @Nullable final PlayQueue playQueue,
+                                               final boolean switchingPlayers,
+                                               final boolean forcePlayFullscreen) {
         final Player player = PlayerHolder.getInstance().getPlayer();
         openVideoDetailFragment(context, fragmentManager, serviceId, url, title, playQueue,
-                switchingPlayers, switchingPlayers && player != null
-                        ? player.requestMainPlaybackMode() : 0,
-                PlayerHelper.isStartMainPlayerFullscreenEnabled(context));
+                switchingPlayers, forcePlayFullscreen,
+                switchingPlayers && player != null ? player.requestMainPlaybackMode() : 0,
+                forcePlayFullscreen || PlayerHelper.isStartMainPlayerFullscreenEnabled(context));
     }
 
     public static void openVideoDetailFragment(@NonNull final Context context,
@@ -469,7 +489,20 @@ public final class NavigationHelper {
                                                final boolean switchingPlayers,
                                                final long modeSwitchRequest,
                                                final boolean fullscreen) {
+        openVideoDetailFragment(context, fragmentManager, serviceId, url, title, playQueue,
+                switchingPlayers, false, modeSwitchRequest, fullscreen);
+    }
 
+    public static void openVideoDetailFragment(@NonNull final Context context,
+                                               @NonNull final FragmentManager fragmentManager,
+                                               final int serviceId,
+                                               @Nullable final String url,
+                                               @NonNull final String title,
+                                               @Nullable final PlayQueue playQueue,
+                                               final boolean switchingPlayers,
+                                               final boolean forcePlayFullscreen,
+                                               final long modeSwitchRequest,
+                                               final boolean fullscreen) {
         final PlayerHolder playerHolder = PlayerHolder.getInstance();
         if (switchingPlayers) {
             final Player player = playerHolder.getPlayer();
@@ -480,8 +513,7 @@ public final class NavigationHelper {
             final Fragment existing = fragmentManager.findFragmentById(R.id.fragment_player_holder);
             if (existing instanceof VideoDetailFragment && existing.isAdded()
                     && existing.getView() != null) {
-                final VideoDetailFragment details = (VideoDetailFragment) existing;
-                details.switchToMainPlayer(modeSwitchRequest, fullscreen);
+                ((VideoDetailFragment) existing).switchToMainPlayer(modeSwitchRequest, fullscreen);
             } else {
                 final VideoDetailFragment details = VideoDetailFragment.getInstance(
                         serviceId, url, title, null);
@@ -521,8 +553,9 @@ public final class NavigationHelper {
 
         final RunnableWithVideoDetailFragment onVideoDetailFragmentReady = (detailFragment,
                                                                             loadVideo) -> {
-            expandMainPlayer(detailFragment.requireActivity());
-            detailFragment.setAutoPlay(autoPlay);
+            expandMainPlayer();
+            detailFragment.setAutoPlay(autoPlay || forcePlayFullscreen);
+            detailFragment.setForceFullscreen(forcePlayFullscreen);
             if (loadVideo) {
                 detailFragment.selectAndLoadVideo(serviceId, url, title, playQueue);
             }
@@ -535,7 +568,8 @@ public final class NavigationHelper {
         } else {
             final VideoDetailFragment instance = VideoDetailFragment
                     .getInstance(serviceId, url, title, playQueue);
-            instance.setAutoPlay(autoPlay);
+            instance.setAutoPlay(autoPlay || forcePlayFullscreen);
+            instance.setForceFullscreen(forcePlayFullscreen);
 
             defaultTransaction(fragmentManager)
                     .replace(R.id.fragment_player_holder, instance)
@@ -671,12 +705,23 @@ public final class NavigationHelper {
                                        @NonNull final String title,
                                        @Nullable final PlayQueue playQueue,
                                        final boolean switchingPlayers) {
+        openVideoDetail(context, serviceId, url, title, playQueue, switchingPlayers, false);
+    }
+
+    public static void openVideoDetail(final Context context,
+                                       final int serviceId,
+                                       final String url,
+                                       @NonNull final String title,
+                                       @Nullable final PlayQueue playQueue,
+                                       final boolean switchingPlayers,
+                                       final boolean forcePlayFullscreen) {
 
         final Intent intent = getOpenIntent(context, url, serviceId,
                 StreamingService.LinkType.STREAM);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         intent.putExtra(Constants.KEY_TITLE, title);
         intent.putExtra(VideoDetailFragment.KEY_SWITCHING_PLAYERS, switchingPlayers);
+        intent.putExtra(VideoDetailFragment.KEY_FORCE_PLAY_FULLSCREEN, forcePlayFullscreen);
 
         if (playQueue != null) {
             final String cacheKey = SerializedCache.getInstance().put(playQueue, PlayQueue.class);
@@ -782,34 +827,6 @@ public final class NavigationHelper {
                                           final int serviceId,
                                           final String url) {
         return getOpenIntent(context, url, serviceId, StreamingService.LinkType.CHANNEL);
-    }
-
-    /**
-     * Start an activity to install Kore.
-     *
-     * @param context the context
-     */
-    public static void installKore(final Context context) {
-        installApp(context, context.getString(R.string.kore_package));
-    }
-
-    /**
-     * Start Kore app to show a video on Kodi.
-     * <p>
-     * For a list of supported urls see the
-     * <a href="https://github.com/xbmc/Kore/blob/master/app/src/main/AndroidManifest.xml">
-     * Kore source code
-     * </a>.
-     *
-     * @param context  the context to use
-     * @param videoURL the url to the video
-     */
-    public static void playWithKore(final Context context, final Uri videoURL) {
-        final Intent intent = new Intent(Intent.ACTION_VIEW);
-        intent.setPackage(context.getString(R.string.kore_package));
-        intent.setData(videoURL);
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        context.startActivity(intent);
     }
 
     /**

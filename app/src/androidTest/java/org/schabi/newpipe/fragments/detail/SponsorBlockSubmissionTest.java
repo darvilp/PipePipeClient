@@ -120,7 +120,7 @@ public class SponsorBlockSubmissionTest {
     @Test
     public void completionClearsUnchangedSavedDraftBeforeItsTabIsCreated() {
         withFixture(f -> {
-            f.tabs.clearAllItems();
+            f.parent.editor = null;
             set(f.parent, "sponsorBlockDraft", draft(f.original, 7));
             assertFalse(f.complete()); // No visible editor needs a success dialog.
             assertNull(get(f.parent, "sponsorBlockDraft"));
@@ -132,7 +132,7 @@ public class SponsorBlockSubmissionTest {
     @Test
     public void completionPreservesEditedSavedDraftBeforeItsTabIsCreated() {
         withFixture(f -> {
-            f.tabs.clearAllItems();
+            f.parent.editor = null;
             set(f.parent, "sponsorBlockDraft", draft(f.original, 8));
             assertFalse(f.complete());
             final Bundle saved = (Bundle) get(f.parent, "sponsorBlockDraft");
@@ -164,7 +164,7 @@ public class SponsorBlockSubmissionTest {
             final StreamInfo replacementInfo = info("original");
             replacementInfo.addSponsorBlockSegment(segment("TEMP"));
             set(f.parent, "currentInfo", replacementInfo);
-            f.tabs.clearAllItems();
+            f.parent.editor = null;
             set(f.parent, "sponsorBlockDraft", draft(replacementInfo, 7));
 
             assertFalse(f.complete());
@@ -174,11 +174,15 @@ public class SponsorBlockSubmissionTest {
     }
 
     @Test
-    public void parentStateHooksPreserveDraftOfTabWhoseViewWasNeverCreated() {
+    public void parentStateHooksPreserveDraftBeforeTabCreation() {
         withFixture(f -> {
             final Bundle saved = new Bundle();
-            f.parent.onSaveInstanceState(saved);
+            final VideoDetailFragment parent = new VideoDetailFragment();
+            DetailTestState.model(parent);
+            set(parent, "sponsorBlockDraft", f.submittedEditor.saveDraft());
+            parent.onSaveInstanceState(saved);
             final VideoDetailFragment restoredParent = new VideoDetailFragment();
+            DetailTestState.model(restoredParent);
             restoredParent.onRestoreInstanceState(saved);
             final Bundle secondSave = new Bundle();
             restoredParent.onSaveInstanceState(secondSave);
@@ -209,16 +213,12 @@ public class SponsorBlockSubmissionTest {
                 final SponsorBlockFragment editor = editor(info, draft(info, 7));
                 // Keep the actual parent URL empty to suppress extraction and playback startup.
                 // Its real lifecycle, adapter lookup, child restoration and state hooks still run.
-                final TabAdapter tabs = new TabAdapter(parent.getChildFragmentManager());
-                tabs.addFragment(editor, "SPONSOR_BLOCK TAB");
-                set(parent, "pageAdapter", tabs);
-                parent.getChildFragmentManager().beginTransaction()
-                        .add(R.id.view_pager, editor, "draft-editor").commitNow();
+                DetailTestState.showEditor(parent, editor, 401L);
             });
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             scenario.onActivity(activity -> {
                 final SponsorBlockFragment editor = (SponsorBlockFragment) originalParent.get()
-                        .getChildFragmentManager().findFragmentByTag("draft-editor");
+                        .getChildFragmentManager().findFragmentByTag("f401");
                 final AlertDialog dialog = (AlertDialog) editorField(editor, "timeDialog");
                 assertTrue(dialog.isShowing());
                 ((EditText) dialog.findViewById(R.id.time_input)).setText("0:06.");
@@ -230,7 +230,9 @@ public class SponsorBlockSubmissionTest {
                 final VideoDetailFragment parent = (VideoDetailFragment) activity
                         .getSupportFragmentManager().findFragmentByTag("draft-parent");
                 assertNotSame(originalParent.get(), parent);
-                final Bundle state = (Bundle) get(parent, "sponsorBlockDraft");
+                final SponsorBlockFragment restoredEditor = (SponsorBlockFragment) parent
+                        .getChildFragmentManager().findFragmentByTag("f401");
+                final Bundle state = restoredEditor.saveDraft();
                 assertEquals(1234, state.getInt("start"));
                 assertEquals(5678, state.getInt("end"));
                 assertEquals(2, state.getInt("category"));
@@ -238,7 +240,7 @@ public class SponsorBlockSubmissionTest {
                 assertEquals("original-draft", state.getString("draftId"));
                 assertEquals("0:06.", state.getString("editorText"));
                 final SponsorBlockFragment editor = (SponsorBlockFragment) parent
-                        .getChildFragmentManager().findFragmentByTag("draft-editor");
+                        .getChildFragmentManager().findFragmentByTag("f401");
                 final AlertDialog dialog = (AlertDialog) editorField(editor, "timeDialog");
                 assertTrue(dialog.isShowing());
                 assertEquals("0:06.", ((EditText) dialog.findViewById(R.id.time_input))
@@ -264,14 +266,14 @@ public class SponsorBlockSubmissionTest {
                 parent.submit();
                 parent.submit();
                 assertEquals(1, parent.requests);
-                assertTrue((Boolean) editorField(parent.editor, "submitting"));
+                assertTrue((Boolean) editorField(parent.host.editor, "submitting"));
                 parent.response.onSuccess(new Response(500, "Controlled failure", null,
                         "", null, ""));
             });
             awaitCompletion(scenario, parent);
             scenario.onActivity(activity -> {
-                assertFalse((Boolean) editorField(parent.editor, "submitting"));
-                assertTrue(parent.editor.saveDraft().containsKey("start"));
+                assertFalse((Boolean) editorField(parent.host.editor, "submitting"));
+                assertTrue(parent.host.editor.saveDraft().containsKey("start"));
                 parent.response = SingleSubject.create();
                 parent.submit();
                 assertEquals(2, parent.requests);
@@ -279,8 +281,8 @@ public class SponsorBlockSubmissionTest {
             });
             awaitCompletion(scenario, parent);
             scenario.onActivity(activity -> {
-                assertFalse(parent.editor.saveDraft().containsKey("start"));
-                assertFalse((Boolean) editorField(parent.editor, "submitting"));
+                assertFalse(parent.host.editor.saveDraft().containsKey("start"));
+                assertFalse((Boolean) editorField(parent.host.editor, "submitting"));
             });
         });
     }
@@ -289,7 +291,7 @@ public class SponsorBlockSubmissionTest {
     public void transportFailureAllowsRetryAndStaleRequestsNeverStart() {
         withTransport((scenario, parent) -> {
             scenario.onActivity(activity -> {
-                parent.onRequestSubmitPendingSegment(1, parent.info.getUrl(), segment("submitted"));
+                parent.onRequestSubmitPendingSegment(1, parent.host.currentInfo.getUrl(), segment("submitted"));
                 parent.onRequestSubmitPendingSegment(0, "https://example.invalid/stale",
                         segment("submitted"));
                 assertEquals(0, parent.requests);
@@ -298,8 +300,8 @@ public class SponsorBlockSubmissionTest {
             });
             awaitCompletion(scenario, parent);
             scenario.onActivity(activity -> {
-                assertFalse((Boolean) editorField(parent.editor, "submitting"));
-                assertTrue(parent.editor.saveDraft().containsKey("start"));
+                assertFalse((Boolean) editorField(parent.host.editor, "submitting"));
+                assertTrue(parent.host.editor.saveDraft().containsKey("start"));
                 parent.response = SingleSubject.create();
                 parent.submit();
                 assertEquals(2, parent.requests);
@@ -308,7 +310,7 @@ public class SponsorBlockSubmissionTest {
             });
             awaitCompletion(scenario, parent);
             scenario.onActivity(activity ->
-                    assertFalse(parent.editor.saveDraft().containsKey("start")));
+                    assertFalse(parent.host.editor.saveDraft().containsKey("start")));
         });
     }
 
@@ -319,7 +321,7 @@ public class SponsorBlockSubmissionTest {
         do {
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             scenario.onActivity(activity -> {
-                final Disposable subscription = (Disposable) get(parent.fragment, "submitSegmentSubscriber");
+                final Disposable subscription = (Disposable) get(parent.controller, "submitSubscriber");
                 complete.set(subscription != null && subscription.isDisposed());
             });
             if (complete.get()) {
@@ -338,12 +340,8 @@ public class SponsorBlockSubmissionTest {
                 final ControlledDetailFragment parent = new ControlledDetailFragment();
                 activity.getSupportFragmentManager().beginTransaction()
                         .replace(R.id.fragment_player_holder, parent.fragment, "controlled-parent").commitNow();
-                parent.info = info("transport");
-                parent.editor = editor(parent.info, draft(parent.info, 7));
-                final TabAdapter tabs = new TabAdapter(parent.fragment.getChildFragmentManager());
-                tabs.addFragment(parent.editor, "SPONSOR_BLOCK TAB");
-                set(parent.fragment, "pageAdapter", tabs);
-                set(parent.fragment, "currentInfo", parent.info);
+                parent.host.currentInfo = info("transport");
+                parent.host.editor = editor(parent.host.currentInfo, draft(parent.host.currentInfo, 7));
                 result.set(parent);
             });
             test.accept(scenario, result.get());
@@ -355,19 +353,19 @@ public class SponsorBlockSubmissionTest {
         private final VideoDetailFragment fragment = VideoDetailFragment.getInstanceInCollapsedState();
         private SingleSubject<Response> response = SingleSubject.create();
         private int requests;
-        private StreamInfo info;
-        private SponsorBlockFragment editor;
+        private final FixtureHost host = new FixtureHost();
+        private final DetailSponsorBlock controller = new DetailSponsorBlock(fragment, host);
 
         private void onRequestSubmitPendingSegment(final int serviceId, final String url,
                                                     final SponsorBlockSegment segment) {
-            fragment.submitSponsorBlockSegment(serviceId, url, segment, capturedInfo -> {
+            controller.submitSponsorBlockSegment(serviceId, url, segment, capturedInfo -> {
                 requests++;
                 return response;
             });
         }
 
         private void submit() {
-            onRequestSubmitPendingSegment(info.getServiceId(), info.getUrl(), segment("submitted"));
+            onRequestSubmitPendingSegment(host.currentInfo.getServiceId(), host.currentInfo.getUrl(), segment("submitted"));
         }
     }
 
@@ -419,7 +417,7 @@ public class SponsorBlockSubmissionTest {
 
     private static void set(final Object target, final String name, final Object value) {
         try {
-            final Field field = VideoDetailFragment.class.getDeclaredField(name);
+            final Field field = target.getClass().getDeclaredField(name);
             field.setAccessible(true);
             field.set(target, value);
         } catch (final ReflectiveOperationException exception) {
@@ -429,7 +427,7 @@ public class SponsorBlockSubmissionTest {
 
     private static Object get(final Object target, final String name) {
         try {
-            final Field field = VideoDetailFragment.class.getDeclaredField(name);
+            final Field field = target.getClass().getDeclaredField(name);
             field.setAccessible(true);
             return field.get(target);
         } catch (final ReflectiveOperationException exception) {
@@ -437,27 +435,36 @@ public class SponsorBlockSubmissionTest {
         }
     }
 
+    private static final class FixtureHost implements DetailSponsorBlock.Host {
+        private StreamInfo currentInfo;
+        private SponsorBlockFragment editor;
+        private Bundle sponsorBlockDraft;
+
+        @Override public org.schabi.newpipe.player.Player getPlayer() { return null; }
+        @Override public StreamInfo getCurrentInfo() { return currentInfo; }
+        @Override public SponsorBlockFragment getSponsorBlockFragment() { return editor; }
+        @Override public Bundle getSponsorBlockDraft() { return sponsorBlockDraft; }
+        @Override public void setSponsorBlockDraft(final Bundle value) { sponsorBlockDraft = value; }
+    }
+
     private static final class Fixture {
-        private final VideoDetailFragment parent = new VideoDetailFragment();
+        private final FixtureHost parent = new FixtureHost();
+        private final DetailSponsorBlock controller = new DetailSponsorBlock(new VideoDetailFragment(), parent);
         private final StreamInfo original = info("original");
         private final SponsorBlockFragment submittedEditor = editor(original, draft(original, 7));
-        private final TabAdapter tabs;
 
         private Fixture(final MainActivity activity) {
-            tabs = new TabAdapter(activity.getSupportFragmentManager());
             original.addSponsorBlockSegment(segment("TEMP"));
-            set(parent, "pageAdapter", tabs);
             show(original, submittedEditor);
         }
 
         private void show(final StreamInfo info, final SponsorBlockFragment editor) {
-            set(parent, "currentInfo", info);
-            tabs.clearAllItems();
-            tabs.addFragment(editor, "SPONSOR_BLOCK TAB");
+            parent.currentInfo = info;
+            parent.editor = editor;
         }
 
         private boolean complete() {
-            return parent.applySponsorBlockSubmission(original, segment("submitted"),
+            return controller.applySponsorBlockSubmission(original, segment("submitted"),
                     "original-draft", 7, submittedEditor);
         }
     }

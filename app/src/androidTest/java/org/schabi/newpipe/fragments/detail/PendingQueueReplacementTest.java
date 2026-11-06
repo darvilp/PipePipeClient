@@ -16,6 +16,7 @@ import org.schabi.newpipe.player.playqueue.PlayQueue;
 import org.schabi.newpipe.player.playqueue.SinglePlayQueue;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Field;
 import java.util.Arrays;
 
 @RunWith(AndroidJUnit4.class)
@@ -24,11 +25,10 @@ public class PendingQueueReplacementTest {
     public void pendingPlaylistSurvivesFragmentStateRestoration() {
         InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
             final PlayQueue replacement = queue("A", "C", "D");
-            final VideoDetailFragment original = VideoDetailFragment.getInstance(
-                    0, "A", "A", replacement);
+            final VideoDetailFragment original = fragment(replacement);
             final Bundle state = new Bundle();
             original.onSaveInstanceState(state);
-            final VideoDetailFragment restored = new VideoDetailFragment();
+            final VideoDetailFragment restored = fragment(null);
             restored.onRestoreInstanceState(state);
             restored.onQueueUpdate(queue("A", "B"));
             assertEquals(replacement, queueForIntent(restored));
@@ -40,10 +40,9 @@ public class PendingQueueReplacementTest {
         InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
             final PlayQueue active = queue("A", "B");
             final PlayQueue replacement = queue("A", "C", "D");
-            final VideoDetailFragment fragment = VideoDetailFragment.getInstance(
-                    0, "A", "A", replacement);
+            final VideoDetailFragment fragment = fragment(replacement);
             fragment.onQueueUpdate(active);
-            assertSame(replacement, fragment.playQueue);
+            assertSame(replacement, model(fragment).getPlayQueue());
             assertSame(replacement, queueForIntent(fragment));
         });
     }
@@ -52,11 +51,34 @@ public class PendingQueueReplacementTest {
     public void passiveDetailsAcceptExistingServiceQueue() {
         InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
             final PlayQueue active = queue("A", "B");
-            final VideoDetailFragment fragment = VideoDetailFragment.getInstance(
-                    0, "A", "A", null);
+            final VideoDetailFragment fragment = fragment(null);
             fragment.onQueueUpdate(active);
             assertSame(active, queueForIntent(fragment));
         });
+    }
+
+    private static VideoDetailFragment fragment(final PlayQueue queue) {
+        final VideoDetailFragment fragment = VideoDetailFragment.getInstance(0, "A", "A", queue);
+        final VideoDetailViewModel model = new VideoDetailViewModel();
+        model.setInitialData(0, "A", "A", queue);
+        try {
+            final Field field = VideoDetailFragment.class.getDeclaredField("vm");
+            field.setAccessible(true);
+            field.set(fragment, model);
+        } catch (final ReflectiveOperationException error) {
+            throw new AssertionError(error);
+        }
+        return fragment;
+    }
+
+    private static VideoDetailViewModel model(final VideoDetailFragment fragment) {
+        try {
+            final Field field = VideoDetailFragment.class.getDeclaredField("vm");
+            field.setAccessible(true);
+            return (VideoDetailViewModel) field.get(fragment);
+        } catch (final ReflectiveOperationException error) {
+            throw new AssertionError(error);
+        }
     }
 
     private static PlayQueue queue(final String... urls) {
@@ -68,7 +90,7 @@ public class PendingQueueReplacementTest {
     private static PlayQueue queueForIntent(final VideoDetailFragment fragment) {
         try {
             final Method method = VideoDetailFragment.class.getDeclaredMethod(
-                    "setupPlayQueueForIntent", boolean.class);
+                    "playQueueForIntent", boolean.class);
             method.setAccessible(true);
             return (PlayQueue) method.invoke(fragment, false);
         } catch (final ReflectiveOperationException error) {

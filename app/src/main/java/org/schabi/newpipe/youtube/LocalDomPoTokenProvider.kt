@@ -9,6 +9,7 @@ import com.grack.nanojson.JsonWriter
 import org.schabi.newpipe.DownloaderImpl
 import org.schabi.newpipe.R
 import org.schabi.newpipe.SharedWebViewRuntime
+import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
 import org.schabi.newpipe.extractor.services.youtube.YoutubePoTokenResult
 import org.schabi.newpipe.extractor.services.youtube.sabr.exception.SabrProtocolException
 import java.io.Closeable
@@ -18,7 +19,11 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+
+/** A player PO token together with the generation of the minter that produced it. */
+class MintedPlayerPoToken(val token: ByteArray, val generation: Long)
 
 object LocalDomPoTokenProvider {
     private lateinit var appContext: Context
@@ -28,29 +33,64 @@ object LocalDomPoTokenProvider {
     private val initializationLock = Any()
     @Volatile
     private var initializationTask: FutureTask<MintState>? = null
+    private val generationCounter = AtomicLong()
+    private val mintedTokenGenerations = object : LinkedHashMap<String, Long>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>): Boolean =
+            size > MAX_TRACKED_TOKENS
+    }
 
     fun warmUp() {
         ensureInitializationTask()
     }
 
     fun getPlayerPoToken(videoId: String): YoutubePoTokenResult {
-        return mintFromCurrentState(::getState, { it.session.isClosed() }) { state ->
-            val token = when (state.bootstrap.binding) {
-                YoutubePoTokenBinding.CONTENT -> state.session.mint(videoId)
-                YoutubePoTokenBinding.SESSION -> requireNotNull(state.sessionPoToken).clone()
-                YoutubePoTokenBinding.NONE -> throw SabrProtocolException(
-                    "YouTube home does not enable a supported PO token binding",
-                )
-            }
-            YoutubePoTokenResult(
-                state.bootstrap.visitorData,
-                state.bootstrap.clientVersion,
-                Base64.getUrlEncoder().withoutPadding().encodeToString(token),
-            )
-        }
+        val state = getState()
+        return YoutubePoTokenResult(
+            state.bootstrap.visitorData,
+            state.bootstrap.clientVersion,
+            encodeToken(mint(state, videoId)),
+        )
+    }
+
+    fun mintPlayerPoToken(videoId: String): MintedPlayerPoToken {
+        val state = getState()
+        return MintedPlayerPoToken(mint(state, videoId), state.generation)
+    }
+
+    /** Generation of the minter that produced [token], or null when it was not minted recently. */
+    fun generationOf(token: ByteArray): Long? {
+        val key = encodeToken(token)
+        return synchronized(mintedTokenGenerations) { mintedTokenGenerations[key] }
     }
 
     fun invalidate() {
+        invalidateMatching(null)
+    }
+
+    /** Replaces the minter only if it is still the one of [generation]. */
+    fun invalidate(generation: Long) {
+        invalidateMatching(generation)
+    }
+
+    private fun mint(state: MintState, videoId: String): ByteArray {
+        val token = when (state.bootstrap.binding) {
+            YoutubePoTokenBinding.CONTENT -> state.session.mint(videoId)
+            YoutubePoTokenBinding.SESSION -> requireNotNull(state.sessionPoToken).clone()
+            YoutubePoTokenBinding.NONE -> throw SabrProtocolException(
+                "YouTube home does not enable a supported PO token binding",
+            )
+        }
+        val key = encodeToken(token)
+        synchronized(mintedTokenGenerations) {
+            mintedTokenGenerations[key] = state.generation
+        }
+        return token
+    }
+
+    private fun encodeToken(token: ByteArray): String =
+        Base64.getUrlEncoder().withoutPadding().encodeToString(token)
+
+    private fun invalidateMatching(generation: Long?) {
         val sessionToClose: PersistentMintSession
         synchronized(initializationLock) {
             val task = initializationTask ?: return
@@ -60,6 +100,7 @@ object LocalDomPoTokenProvider {
             } catch (_: Exception) {
                 return
             }
+            if (generation != null && state.generation != generation) return
             initializationTask = null
             sessionToClose = state.session
         }
@@ -83,6 +124,8 @@ object LocalDomPoTokenProvider {
                     }
                 }
                 val cause = error.cause ?: error
+                // keep the captcha error unwrapped so the error panel offers to solve it
+                if (cause is ReCaptchaException) throw cause
                 throw SabrProtocolException(
                     "Global PO token initialization failed: ${cause.message}",
                     cause,
@@ -138,7 +181,12 @@ object LocalDomPoTokenProvider {
                             "version=${bootstrap.clientVersion} " +
                             "binding=${bootstrap.binding}",
                     )
-                    MintState(bootstrap, session, sessionPoToken)
+                    MintState(
+                        bootstrap,
+                        session,
+                        sessionPoToken,
+                        generationCounter.incrementAndGet(),
+                    )
                 } catch (error: Throwable) {
                     session.close()
                     throw error
@@ -173,6 +221,7 @@ object LocalDomPoTokenProvider {
         val bootstrap: YoutubePageAttestationBootstrap,
         val session: PersistentMintSession,
         val sessionPoToken: ByteArray?,
+        val generation: Long,
     )
 
     @JvmStatic
@@ -186,36 +235,9 @@ object LocalDomPoTokenProvider {
     }
 
     private const val TAG = "YoutubeGlobalPoToken"
+    private const val MAX_TRACKED_TOKENS = 64
     private const val YOUTUBE_HOME = "https://www.youtube.com"
     private const val ANONYMOUS_COOKIE = "PREF=hl=en&gl=US"
-}
-
-internal fun <T> mintFromCurrentState(
-    stateProvider: () -> T,
-    isRetired: (T) -> Boolean,
-    mint: (T) -> YoutubePoTokenResult,
-): YoutubePoTokenResult {
-    repeat(3) { attempt ->
-        if (Thread.currentThread().isInterrupted) {
-            throw SabrProtocolException("Local DOM PO token renewal interrupted")
-        }
-        val state = stateProvider()
-        val result = try {
-            mint(state)
-        } catch (error: Exception) {
-            if (!isRetired(state) || Thread.currentThread().isInterrupted || attempt == 2) {
-                throw error
-            }
-            return@repeat
-        }
-        if (!isRetired(state)) {
-            return result
-        }
-        if (Thread.currentThread().isInterrupted) {
-            throw SabrProtocolException("Local DOM PO token renewal interrupted")
-        }
-    }
-    throw SabrProtocolException("Local DOM PO token session retired during three mint attempts")
 }
 
 private class PersistentMintSession private constructor(
@@ -293,8 +315,6 @@ private class PersistentMintSession private constructor(
     fun isExpired(): Boolean {
         return closed || System.currentTimeMillis() >= expiresAtMs - EXPIRY_MARGIN_MS
     }
-
-    fun isClosed(): Boolean = closed
 
     override fun close() {
         closed = true

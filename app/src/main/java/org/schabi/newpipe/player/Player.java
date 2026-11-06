@@ -1760,7 +1760,7 @@ public final class Player {
     }
 
     @NonNull
-    BulletCommentsController getBulletCommentsController() {
+    public BulletCommentsController getBulletCommentsController() {
         return bulletCommentsController;
     }
 

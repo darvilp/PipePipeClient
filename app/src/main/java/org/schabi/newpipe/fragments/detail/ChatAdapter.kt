@@ -1,5 +1,6 @@
 package org.schabi.newpipe.fragments.detail
 
+import android.annotation.SuppressLint
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -76,6 +77,8 @@ class ChatAdapter(private val forceLight: Boolean) :
         override fun areItemsTheSame(a: BulletCommentsInfoItem, b: BulletCommentsInfoItem) =
             a === b
 
+        // Published chat entries are unchanged; identity also preserves repeated messages.
+        @SuppressLint("DiffUtilEquals")
         override fun areContentsTheSame(a: BulletCommentsInfoItem, b: BulletCommentsInfoItem) =
             a === b
     }

@@ -46,6 +46,8 @@ class MiniPlayerSheetController(
         fun onPlayPauseClicked()
 
         fun openUploaderChannel()
+
+        fun returnToActiveItem(): Boolean
     }
 
     private val activity get() = fragment.requireActivity()
@@ -55,6 +57,7 @@ class MiniPlayerSheetController(
     private val behavior: BottomSheetBehavior<FrameLayout> =
         BottomSheetBehavior.from(activity.findViewById(R.id.fragment_player_holder))
     private var pendingLayoutListener: ViewTreeObserver.OnGlobalLayoutListener? = null
+    private var returnToActiveItemAfterDrag = false
 
     private val sheetCallback = object : BottomSheetBehavior.BottomSheetCallback() {
         override fun onStateChanged(bottomSheet: View, newState: Int) = onSheetStateChanged(newState)
@@ -172,6 +175,7 @@ class MiniPlayerSheetController(
         val player = host.player
         when (newState) {
             BottomSheetBehavior.STATE_HIDDEN -> {
+                returnToActiveItemAfterDrag = false
                 moveFocusToMainFragment(true)
                 manageSpaceAtTheBottom(true)
                 behavior.peekHeight = 0
@@ -179,6 +183,11 @@ class MiniPlayerSheetController(
                 applyOverlayForState(newState)
             }
             BottomSheetBehavior.STATE_EXPANDED -> {
+                val returnToActiveItem = returnToActiveItemAfterDrag
+                returnToActiveItemAfterDrag = false
+                if (returnToActiveItem && host.returnToActiveItem()) {
+                    return
+                }
                 moveFocusToMainFragment(false)
                 manageSpaceAtTheBottom(false)
                 behavior.peekHeight = peekHeight
@@ -190,6 +199,7 @@ class MiniPlayerSheetController(
                 }
             }
             BottomSheetBehavior.STATE_COLLAPSED -> {
+                returnToActiveItemAfterDrag = false
                 moveFocusToMainFragment(true)
                 manageSpaceAtTheBottom(false)
                 behavior.peekHeight = peekHeight
@@ -206,6 +216,9 @@ class MiniPlayerSheetController(
                 }
             }
             BottomSheetBehavior.STATE_DRAGGING, BottomSheetBehavior.STATE_SETTLING -> {
+                if (newState == BottomSheetBehavior.STATE_DRAGGING) {
+                    returnToActiveItemAfterDrag = true
+                }
                 overlay.root.visibility = View.VISIBLE
                 if (player?.isFullscreen == true) {
                     playerView.showSystemUi()
@@ -218,7 +231,11 @@ class MiniPlayerSheetController(
     }
 
     private fun setupOverlayClicks() {
-        val expand = View.OnClickListener { expand() }
+        val expand = View.OnClickListener {
+            if (!host.returnToActiveItem()) {
+                expand()
+            }
+        }
         overlay.overlayThumbnail.setOnClickListener(expand)
         overlay.overlayMetadataLayout.setOnClickListener(expand)
         overlay.overlayButtonsLayout.setOnClickListener(expand)

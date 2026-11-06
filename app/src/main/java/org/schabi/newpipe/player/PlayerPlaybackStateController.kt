@@ -370,7 +370,8 @@ class PlayerPlaybackStateController(private val player: Player) {
 
         NotificationUtil.getInstance().createNotificationIfNeededAndUpdate(player, false)
 
-        if (playQueue.index < playQueue.size() - 1) {
+        if (!player.sponsorBlockController.isEditingCurrentVideo()
+            && playQueue.index < playQueue.size() - 1) {
             playQueue.offsetIndex(+1)
         }
         if (player.progressController.isProgressLoopRunning()) {

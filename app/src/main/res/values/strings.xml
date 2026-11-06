@@ -1315,4 +1315,6 @@ Only add repositories you trust.</string>
 <string name="reset_settings_summary">Restore all settings to default. History and subscriptions are untouched.</string>
 <string name="reset_settings_confirmation">All settings will be restored to default and the app will restart. Continue?</string>
 <string name="invalid_settings_file">Not a valid settings file</string>
+    <string name="unofficial_releases_title">Unofficial releases</string>
+    <string name="unofficial_releases_summary">Download updates from the darvilp fork. Automatic updates are disabled for this build.</string>
 </resources>

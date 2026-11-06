@@ -1,6 +1,7 @@
 package org.schabi.newpipe.fragments.detail
 
 import android.animation.ValueAnimator
+import android.annotation.SuppressLint
 import android.graphics.Color
 import android.os.Build
 import android.util.DisplayMetrics
@@ -177,6 +178,8 @@ class DetailPlayerViewHost(
         private val focusableInTouchMode = view.isFocusableInTouchMode
         private val descendantFocusability = (view as? ViewGroup)?.descendantFocusability
 
+        // The snapshot is the mode returned by View.getFocusable().
+        @SuppressLint("WrongConstant")
         fun restore(view: View) {
             if (wasFocusable) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

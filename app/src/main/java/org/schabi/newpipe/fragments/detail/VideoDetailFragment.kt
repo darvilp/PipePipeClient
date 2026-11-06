@@ -10,6 +10,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
+import android.view.SurfaceHolder
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -67,6 +68,8 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
 
     companion object {
         const val KEY_SWITCHING_PLAYERS = "switching_players"
+        const val KEY_MODE_SWITCH_REQUEST = "mode_switch_request"
+        const val KEY_MODE_SWITCH_FULLSCREEN = "mode_switch_fullscreen"
         const val KEY_FORCE_PLAY_FULLSCREEN = "force_play_fullscreen"
 
         private const val STATE_SERVICE_ID = "serviceId"
@@ -110,6 +113,10 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
     private var sheetStateToSave = BottomSheetBehavior.STATE_EXPANDED
     private var pendingStartupTraceId = 0L
     private var pendingDirectFullscreen = false
+    private var pendingMainModeRequest = 0L
+    private var pendingMainModeFullscreen = false
+    private var pendingModeSurfaceHolder: SurfaceHolder? = null
+    private var pendingModeSurfaceCallback: SurfaceHolder.Callback? = null
     private var pendingPlaybackQueue: PlayQueue? = null
 
     private var player: Player? = null
@@ -173,6 +180,89 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
     fun openVideoPlayer(directlyFullscreenIfApplicable: Boolean) {
         prepareMainPlayerUi(directlyFullscreenIfApplicable)
         openMainPlayer()
+    }
+
+    /** Attaches the active service queue without creating a playback-start intent. */
+    fun switchToMainPlayer(request: Long, fullscreen: Boolean) {
+        pendingMainModeRequest = request
+        pendingMainModeFullscreen = fullscreen
+        setAutoPlay(false)
+        playerHolder.setListener(this)
+        attachPendingMainPlayer()
+    }
+
+    private fun attachPendingMainPlayer() {
+        val player = player ?: return
+        val binding = _binding ?: return
+        if (pendingMainModeRequest == 0L || view == null) {
+            return
+        }
+        if (playerHolder.player !== player
+            || !player.isMainPlaybackModeRequestCurrent(pendingMainModeRequest)) {
+            pendingMainModeRequest = 0
+            clearModeSurfaceCallback()
+            return
+        }
+        showActiveModeItem()
+        NavigationHelper.expandMainPlayer()
+        prepareMainPlayerUi(pendingMainModeFullscreen)
+        if (player.rootView.parent !== binding.detailThumbnailRootLayout.playerPlaceholder) {
+            player.removePopupFromView()
+            player.service.removeViewFromParent()
+            playerView?.addVideoPlayerView()
+        }
+        player.rootView.visibility = View.VISIBLE
+        player.surfaceView.visibility = View.VISIBLE
+        val holder = player.surfaceView.holder
+        if (holder.surface.isValid) {
+            finishPendingMainMode()
+        } else if (pendingModeSurfaceCallback == null) {
+            pendingModeSurfaceHolder = holder
+            pendingModeSurfaceCallback = object : SurfaceHolder.Callback {
+                override fun surfaceCreated(holder: SurfaceHolder) = finishPendingMainMode()
+
+                override fun surfaceChanged(holder: SurfaceHolder, format: Int,
+                                             width: Int, height: Int) = Unit
+
+                override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
+            }
+            holder.addCallback(pendingModeSurfaceCallback)
+        }
+    }
+
+    private fun showActiveModeItem() {
+        val queue = player?.playQueue ?: return
+        val item = queue.item ?: return
+        pendingPlaybackQueue = null
+        setAutoPlay(false)
+        if (vm.serviceId != item.serviceId || vm.url != item.url) {
+            selectAndLoadVideo(item.serviceId, item.url, item.title, null)
+        }
+        vm.playQueue = queue
+    }
+
+    private fun finishPendingMainMode() {
+        clearModeSurfaceCallback()
+        val player = player
+        val target = _binding?.detailThumbnailRootLayout?.playerPlaceholder
+        if (target == null || player == null || playerHolder.player !== player
+            || player.rootView.parent !== target
+            || !player.isMainPlaybackModeRequestCurrent(pendingMainModeRequest)) {
+            pendingMainModeRequest = 0
+            return
+        }
+        showActiveModeItem()
+        pendingMainModeRequest = 0
+        player.switchPlaybackMode(PlayerType.VIDEO)
+        attachMainPlayerToDisplayedVideo()
+        prepareMainPlayerUi(pendingMainModeFullscreen)
+        scrollToTop()
+    }
+
+    private fun clearModeSurfaceCallback() {
+        pendingModeSurfaceCallback?.let { pendingModeSurfaceHolder?.removeCallback(it) }
+        pendingModeSurfaceHolder = null
+        pendingModeSurfaceCallback = null
     }
 
     private fun prepareMainPlayerUi(directlyFullscreenIfApplicable: Boolean) {
@@ -276,6 +366,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         } else {
             playerView?.updateThumbnailHeight()
         }
+        attachPendingMainPlayer()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -288,6 +379,8 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         outState.putInt(STATE_SHEET, MiniPlayerSheetController.sanitizeSheetState(sheetStateToSave))
         outState.putBoolean(STATE_AUTO_PLAY, autoPlayEnabled)
         outState.putBoolean("pendingDirectFullscreen", pendingDirectFullscreen)
+        outState.putLong(KEY_MODE_SWITCH_REQUEST, pendingMainModeRequest)
+        outState.putBoolean(KEY_MODE_SWITCH_FULLSCREEN, pendingMainModeFullscreen)
         pendingPlaybackQueue?.let {
             outState.putString("pendingPlaybackQueue",
                 SerializedCache.getInstance().put(it, PlayQueue::class.java))
@@ -306,6 +399,8 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
             savedInstanceState.getInt(STATE_SHEET, BottomSheetBehavior.STATE_EXPANDED))
         autoPlayEnabled = savedInstanceState.getBoolean(STATE_AUTO_PLAY, true)
         pendingDirectFullscreen = savedInstanceState.getBoolean("pendingDirectFullscreen")
+        pendingMainModeRequest = savedInstanceState.getLong(KEY_MODE_SWITCH_REQUEST)
+        pendingMainModeFullscreen = savedInstanceState.getBoolean(KEY_MODE_SWITCH_FULLSCREEN)
         pendingPlaybackQueue = savedInstanceState.getString("pendingPlaybackQueue")?.let {
             SerializedCache.getInstance().get(it, PlayQueue::class.java)
         }
@@ -322,7 +417,8 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         // which the configuration change caused by entering fullscreen cancels. The player
         // service keeps isFullscreen, so the fullscreen event is not re-emitted to this new
         // fragment and the restored collapsed offset would leave the player off-screen.
-        if (player?.isFullscreen == true) {
+        if (player?.isFullscreen == true
+            && mainPlayerRelationFor(vm.serviceId, vm.url) == Relation.ACTIVE_ITEM) {
             _binding?.appBarLayout?.setExpanded(true, false)
         }
         tabs?.onViewStateRestored()
@@ -350,6 +446,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
     }
 
     override fun onDestroyView() {
+        clearModeSurfaceCallback()
         handler.removeCallbacksAndMessages(null)
         sheet?.release()
         sponsorBlock.saveDraft()
@@ -823,6 +920,10 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         player = connectedPlayer
         playerService = connectedPlayerService
         sheet?.updateDraggableForFullscreen()
+        if (pendingMainModeRequest != 0L) {
+            attachPendingMainPlayer()
+            return
+        }
         // does nothing if the player is not in fullscreen
         hideSystemUiIfNeeded()
         if (!connectedPlayer.videoPlayerSelected() && !playAfterConnect) {
@@ -842,6 +943,8 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
     }
 
     override fun onServiceDisconnected() {
+        pendingMainModeRequest = 0
+        clearModeSurfaceCallback()
         playerService = null
         player = null
         playerView?.restoreDefaultBrightness()
@@ -932,6 +1035,8 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
 
     override fun onServiceStopped() {
         cancelPendingFullscreen()
+        pendingMainModeRequest = 0
+        clearModeSurfaceCallback()
         sheet?.setPlayPauseImage(false)
         vm.currentInfo?.let { sheet?.updateOverlayData(it.name, it.uploaderName, it.thumbnailUrl) }
     }

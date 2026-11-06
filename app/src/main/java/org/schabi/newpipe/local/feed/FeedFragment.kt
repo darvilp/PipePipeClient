@@ -107,6 +107,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
     private var groupId = FeedGroupEntity.GROUP_ALL_ID
     private var groupName = ""
     private var oldestSubscriptionUpdate: OffsetDateTime? = null
+    private var notLoadedCount = 0L
 
     private lateinit var groupAdapter: GroupieAdapter
     @JvmField var showPlayedItems: Boolean = true
@@ -131,6 +132,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
     private var searchClear: View? = null
     private var originalItems = mutableListOf<StreamItem>()
     private var filteredItems = mutableListOf<StreamItem>()
+    private var displayedContent: FeedState.LoadedState? = null
     private var isFilterEnabled = false
     private var isPullToRefreshEnabled = true
 
@@ -162,7 +164,8 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
 
         onSettingsChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             when (key) {
-                getString(R.string.list_view_mode_key) -> {
+                getString(R.string.list_view_mode_key),
+                getString(R.string.card_mode_enabled_key) -> {
                     updateListViewModeOnResume = true
                 }
                 getString(R.string.grid_layout_enabled_key) -> {
@@ -256,6 +259,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
 
         if (updateListViewModeOnResume) {
             updateListViewModeOnResume = false
+            displayedContent = null
 
             setupListViewMode()
             if (viewModel.stateLiveData.value != null) {
@@ -501,6 +505,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
 
         originalItems.clear()
         filteredItems.clear()
+        displayedContent = null
         editText = null
         searchClear = null
 
@@ -708,6 +713,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
         super.showLoading()
         feedBinding.itemsList.animateHideRecyclerViewAllowingScrolling()
         feedBinding.refreshRootView.animate(false, 0)
+        feedBinding.refreshProgressBar.isVisible = false
         feedBinding.loadingProgressText.animate(true, 200)
         feedBinding.swipeRefreshLayout.isRefreshing = true
         isRefreshing = true
@@ -717,8 +723,10 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
         super.hideLoading()
         feedBinding.itemsList.animate(true, 0)
         feedBinding.refreshRootView.animate(true, 200)
+        feedBinding.refreshProgressBar.isVisible = false
         feedBinding.loadingProgressText.animate(false, 0)
         feedBinding.swipeRefreshLayout.isRefreshing = false
+        restoreRefreshSubtitle()
         isRefreshing = false
     }
 
@@ -726,9 +734,12 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
         super.showEmptyState()
         feedBinding.itemsList.animateHideRecyclerViewAllowingScrolling()
         feedBinding.refreshRootView.animate(true, 200)
+        feedBinding.refreshProgressBar.isVisible = false
         feedBinding.loadingProgressText.animate(false, 0)
         feedBinding.swipeRefreshLayout.isRefreshing = false
+        restoreRefreshSubtitle()
         playlistControlBinding?.root?.isVisible = false
+        isRefreshing = false
     }
 
     override fun handleResult(result: FeedState) {
@@ -745,16 +756,37 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
         super.handleError()
         feedBinding.itemsList.animateHideRecyclerViewAllowingScrolling()
         feedBinding.refreshRootView.animate(false, 0)
+        feedBinding.refreshProgressBar.isVisible = false
         feedBinding.loadingProgressText.animate(false, 0)
         feedBinding.swipeRefreshLayout.isRefreshing = false
         isRefreshing = false
     }
 
     private fun handleProgressState(progressState: FeedState.ProgressState) {
+        val previousContent = progressState.previousContent
+        val keepContentVisible = FeedRefreshUiPolicy.shouldKeepContentVisible(
+            displayedItemCount = originalItems.size,
+            previousItemCount = previousContent?.items?.size ?: 0
+        )
+
+        if (keepContentVisible) {
+            if (previousContent != null && previousContent !== displayedContent) {
+                displayLoadedContent(
+                    loadedState = previousContent,
+                    highlightNewItems = false,
+                    handleItemsErrors = false
+                )
+            }
+            showNonBlockingRefresh(progressState)
+            return
+        }
+
         showLoading()
 
-        val isIndeterminate = progressState.currentProgress == -1 &&
-            progressState.maxProgress == -1
+        val isIndeterminate = FeedRefreshUiPolicy.isIndeterminate(
+            progressState.currentProgress,
+            progressState.maxProgress
+        )
 
         feedBinding.loadingProgressText.text = if (!isIndeterminate) {
             "${progressState.currentProgress}/${progressState.maxProgress}"
@@ -764,11 +796,43 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
             "∞/∞"
         }
 
-        feedBinding.loadingProgressBar.isIndeterminate = isIndeterminate ||
-            (progressState.maxProgress > 0 && progressState.currentProgress == 0)
+        feedBinding.loadingProgressBar.isIndeterminate = isIndeterminate
         feedBinding.loadingProgressBar.progress = progressState.currentProgress
 
         feedBinding.loadingProgressBar.max = progressState.maxProgress
+    }
+
+    private fun showNonBlockingRefresh(progressState: FeedState.ProgressState) {
+        super.hideLoading()
+        feedBinding.itemsList.animate(true, 0)
+        feedBinding.refreshRootView.animate(true, 0)
+        feedBinding.loadingProgressText.animate(false, 0)
+        feedBinding.swipeRefreshLayout.isRefreshing = false
+        playlistControlBinding?.root?.isVisible = originalItems.isNotEmpty()
+        isRefreshing = true
+
+        val isIndeterminate = FeedRefreshUiPolicy.isIndeterminate(
+            progressState.currentProgress,
+            progressState.maxProgress
+        )
+        feedBinding.refreshProgressBar.isVisible = true
+        feedBinding.refreshProgressBar.isIndeterminate = isIndeterminate
+
+        if (isIndeterminate) {
+            feedBinding.refreshSubtitleText.text = getString(
+                progressState.progressMessage.takeIf { it > 0 }
+                    ?: R.string.feed_notification_loading
+            )
+        } else {
+            feedBinding.refreshProgressBar.max = progressState.maxProgress
+            feedBinding.refreshProgressBar.progress = progressState.currentProgress
+            feedBinding.refreshSubtitleText.text = getString(
+                R.string.feed_notification_loading_progress,
+                progressState.currentProgress,
+                progressState.maxProgress
+            )
+        }
+        feedBinding.refreshSubtitleText.isVisible = true
     }
 
     private fun showInfoItemDialog(item: StreamInfoItem) {
@@ -785,7 +849,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
                 selection.toggle(item.streamWithState.stream.uid)
                 return
             }
-            if (item is StreamItem && !isRefreshing) {
+            if (item is StreamItem) {
                 val stream = item.streamWithState.stream
 
                 if (autoBackgroundPlaying) {
@@ -807,7 +871,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
         }
 
         override fun onItemLongClick(item: Item<*>, view: View): Boolean {
-            if (item is StreamItem && !isRefreshing) {
+            if (item is StreamItem) {
                 showInfoItemDialog(item.streamWithState.stream.toStreamInfoItem())
                 return true
             }
@@ -817,6 +881,24 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
 
     @SuppressLint("StringFormatMatches")
     private fun handleLoadedState(loadedState: FeedState.LoadedState) {
+        displayLoadedContent(
+            loadedState = loadedState,
+            highlightNewItems = true,
+            handleItemsErrors = true
+        )
+
+        if (loadedState.items.isEmpty()) {
+            showEmptyState()
+        } else {
+            hideLoading()
+        }
+    }
+
+    private fun displayLoadedContent(
+        loadedState: FeedState.LoadedState,
+        highlightNewItems: Boolean,
+        handleItemsErrors: Boolean
+    ) {
         val itemVersion = when (getItemViewMode(requireContext())) {
             ItemViewMode.GRID -> StreamItem.ItemVersion.GRID
             ItemViewMode.CARD -> StreamItem.ItemVersion.CARD
@@ -832,6 +914,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
         // Store original items for filtering
         originalItems.clear()
         originalItems.addAll(loadedState.items)
+        displayedContent = loadedState
         filteredItems.clear()
         filteredItems.addAll(originalItems)
 
@@ -841,7 +924,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
         val oldOldestSubscriptionUpdate = oldestSubscriptionUpdate
 
         groupAdapter.updateAsync(loadedState.items, false) {
-            oldOldestSubscriptionUpdate?.run {
+            if (highlightNewItems) oldOldestSubscriptionUpdate?.run {
                 highlightNewItemsAfter(oldOldestSubscriptionUpdate)
             }
         }
@@ -850,31 +933,41 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
             listState = null
         }
 
-        val feedsNotLoaded = loadedState.notLoadedCount > 0
-        feedBinding.refreshSubtitleText.isVisible = feedsNotLoaded
-        if (feedsNotLoaded) {
-            feedBinding.refreshSubtitleText.text = getString(
-                R.string.feed_subscription_not_loaded_count,
-                loadedState.notLoadedCount
-            )
-        }
+        notLoadedCount = loadedState.notLoadedCount
+        restoreRefreshSubtitle()
 
-        if (oldestSubscriptionUpdate != loadedState.oldestUpdate ||
-            (oldestSubscriptionUpdate == null && loadedState.oldestUpdate == null)
+        if (handleItemsErrors &&
+            (oldestSubscriptionUpdate != loadedState.oldestUpdate ||
+                (oldestSubscriptionUpdate == null && loadedState.oldestUpdate == null))
         ) {
             // ignore errors if they have already been handled for the current update
             handleItemsErrors(loadedState.itemsErrors)
         }
         oldestSubscriptionUpdate = loadedState.oldestUpdate
-
-        if (loadedState.items.isEmpty()) {
-            showEmptyState()
-        } else {
-            hideLoading()
-        }
     }
 
     private fun handleErrorState(errorState: FeedState.ErrorState): Boolean {
+        val previousContent = errorState.previousContent
+        val keepContentVisible = FeedRefreshUiPolicy.shouldKeepContentVisible(
+            displayedItemCount = originalItems.size,
+            previousItemCount = previousContent?.items?.size ?: 0
+        )
+
+        if (keepContentVisible) {
+            if (previousContent != null && previousContent !== displayedContent) {
+                displayLoadedContent(
+                    loadedState = previousContent,
+                    highlightNewItems = false,
+                    handleItemsErrors = false
+                )
+            }
+            hideLoading()
+            errorState.error?.let {
+                showSnackBarError(ErrorInfo(it, UserAction.REQUESTED_FEED, "Loading feed"))
+            }
+            return false
+        }
+
         return if (errorState.error == null) {
             hideLoading()
             false
@@ -1013,6 +1106,16 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
         )
     }
 
+    private fun restoreRefreshSubtitle() {
+        feedBinding.refreshSubtitleText.isVisible = notLoadedCount > 0
+        if (notLoadedCount > 0) {
+            feedBinding.refreshSubtitleText.text = getString(
+                R.string.feed_subscription_not_loaded_count,
+                notLoadedCount
+            )
+        }
+    }
+
     /**
      * Highlights all items that are after the specified time
      */
@@ -1131,14 +1234,31 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
     override fun doInitialLoadLogic() {}
 
     override fun reloadContent() {
+        if (isRefreshing) {
+            feedBinding.swipeRefreshLayout.isRefreshing = false
+            return
+        }
+
+        val activity = activity ?: run {
+            feedBinding.swipeRefreshLayout.isRefreshing = false
+            return
+        }
+
+        isRefreshing = true
         hideNewItemsLoaded(false)
 
-        getActivity()?.startService(
-            Intent(requireContext(), FeedLoadService::class.java).apply {
-                putExtra(FeedLoadService.EXTRA_GROUP_ID, groupId)
-            }
-        )
-        listState = null
+        try {
+            activity.startService(
+                Intent(requireContext(), FeedLoadService::class.java).apply {
+                    putExtra(FeedLoadService.EXTRA_GROUP_ID, groupId)
+                }
+            )
+            listState = null
+        } catch (error: RuntimeException) {
+            isRefreshing = false
+            feedBinding.swipeRefreshLayout.isRefreshing = false
+            showSnackBarError(ErrorInfo(error, UserAction.REQUESTED_FEED, "Loading feed"))
+        }
     }
 
     companion object {

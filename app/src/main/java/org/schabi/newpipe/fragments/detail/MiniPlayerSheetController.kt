@@ -43,6 +43,8 @@ class MiniPlayerSheetController(
         /** The page was swiped away. */
         fun onSheetHidden()
 
+        fun onSheetStateChanged(state: Int)
+
         fun onPlayPauseClicked()
 
         fun openUploaderChannel()
@@ -169,6 +171,7 @@ class MiniPlayerSheetController(
 
     private fun onSheetStateChanged(newState: Int) {
         host.savedSheetState = newState
+        host.onSheetStateChanged(newState)
         val player = host.player
         when (newState) {
             BottomSheetBehavior.STATE_HIDDEN -> {

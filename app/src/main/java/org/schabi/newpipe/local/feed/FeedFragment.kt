@@ -349,6 +349,8 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
                     }
                 }
             }
+
+            binding.root.setEnqueueOnLongPress { getPlayQueue() }
         }
     }
 
@@ -485,8 +487,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
             binding.playlistCtrlPlayAllButton.setOnClickListener(null)
             binding.playlistCtrlPlayPopupButton.setOnClickListener(null)
             binding.playlistCtrlPlayBgButton.setOnClickListener(null)
-            binding.playlistCtrlPlayPopupButton.setOnLongClickListener(null)
-            binding.playlistCtrlPlayBgButton.setOnLongClickListener(null)
+            binding.root.setEnqueueOnLongPress(null)
         }
         playlistControlBinding = null
 

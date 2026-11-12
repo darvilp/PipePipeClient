@@ -452,6 +452,7 @@ public class LocalPlaylistFragment extends BaseLocalListFragment<List<PlaylistSt
             playlistControlBinding.playlistCtrlPlayBgButton.setOnClickListener(null);
             playlistControlBinding.playlistCtrlPlayAllButton.setOnClickListener(null);
             playlistControlBinding.playlistCtrlPlayPopupButton.setOnClickListener(null);
+            playlistControlBinding.getRoot().setEnqueueOnLongPress(null);
 
             headerBinding = null;
             playlistControlBinding = null;
@@ -982,6 +983,8 @@ public class LocalPlaylistFragment extends BaseLocalListFragment<List<PlaylistSt
             }
 
         });
+
+        playlistControlBinding.getRoot().setEnqueueOnLongPress(this::getPlayQueue);
 
         hideLoading();
     }

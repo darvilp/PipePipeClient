@@ -190,6 +190,9 @@ public class PlaylistFragment extends BaseListInfoFragment<StreamInfoItem, Playl
 
     @Override
     public void onDestroyView() {
+        if (playlistControlBinding != null) {
+            playlistControlBinding.getRoot().setEnqueueOnLongPress(null);
+        }
         headerBinding = null;
         playlistControlBinding = null;
 
@@ -373,6 +376,8 @@ public class PlaylistFragment extends BaseListInfoFragment<StreamInfoItem, Playl
         playlistControlBinding.playlistCtrlPlayBgButton.setOnClickListener(view ->
                 NavigationHelper.
                         playOnBackgroundPlayer(activity, getPlayQueue(), false));
+
+        playlistControlBinding.getRoot().setEnqueueOnLongPress(this::getPlayQueue);
     }
 
     private void showSortDialog() {

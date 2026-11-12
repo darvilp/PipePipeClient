@@ -220,6 +220,9 @@ public class ChannelVideosFragment extends BaseListInfoFragment<StreamInfoItem, 
         if (subscribeButtonMonitor != null) {
             subscribeButtonMonitor.dispose();
         }
+        if (playlistControlBinding != null) {
+            playlistControlBinding.getRoot().setEnqueueOnLongPress(null);
+        }
         channelBinding = null;
         headerBinding = null;
         playlistControlBinding = null;
@@ -711,6 +714,8 @@ public class ChannelVideosFragment extends BaseListInfoFragment<StreamInfoItem, 
         playlistControlBinding.playlistCtrlPlayBgButton
                 .setOnClickListener(view -> NavigationHelper
                         .playOnBackgroundPlayer(activity, getPlayQueue(), false));
+
+        playlistControlBinding.getRoot().setEnqueueOnLongPress(this::getPlayQueue);
     }
 
     private void showContentNotSupportedIfNeeded() {

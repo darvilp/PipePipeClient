@@ -22,6 +22,7 @@ import org.schabi.newpipe.local.dialog.PlaylistDialog
 import org.schabi.newpipe.cast.CastDialogs
 import org.schabi.newpipe.player.Player
 import org.schabi.newpipe.player.VideoDetailPlayerCrasher
+import org.schabi.newpipe.player.playqueue.SinglePlayQueue
 import org.schabi.newpipe.sleep.SleepTimerService
 import org.schabi.newpipe.util.DeviceUtils
 import org.schabi.newpipe.util.NavigationHelper
@@ -93,6 +94,11 @@ class DetailActions(
 
         content.detailControlsBackground.setOnClickListener { host.openBackgroundPlayer() }
         content.detailControlsPopup.setOnClickListener { host.openPopupPlayer() }
+        val enqueueStream = longClick { info ->
+            NavigationHelper.enqueueOnPlayer(activity, SinglePlayQueue(info))
+        }
+        content.detailControlsBackground.setOnLongClickListener(enqueueStream)
+        content.detailControlsPopup.setOnLongClickListener(enqueueStream)
         content.detailControlsPlaylistAppend.setOnClickListener {
             host.currentInfo?.let { showPlaylistDialog(listOf(StreamEntity(it))) }
         }

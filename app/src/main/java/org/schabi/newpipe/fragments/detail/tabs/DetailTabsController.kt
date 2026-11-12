@@ -33,7 +33,6 @@ import org.schabi.newpipe.fragments.detail.ChatFragment
 import org.schabi.newpipe.fragments.detail.DescriptionFragment
 import org.schabi.newpipe.fragments.list.comments.CommentsFragmentContainer
 import org.schabi.newpipe.fragments.list.sponsorblock.SponsorBlockFragment
-import org.schabi.newpipe.fragments.list.sponsorblock.SponsorBlockFragmentListener
 import org.schabi.newpipe.fragments.list.videos.RelatedItemsFragment
 import org.schabi.newpipe.player.chat.ChatStore
 import org.schabi.newpipe.util.SponsorBlockHelper
@@ -59,7 +58,7 @@ class DetailTabsController(
         val serviceId: Int
         val currentInfo: StreamInfo?
         val isFullscreen: Boolean
-        val sponsorBlockListener: SponsorBlockFragmentListener
+        fun configureSponsorBlockEditor(editor: SponsorBlockFragment)
     }
 
     private val context get() = fragment.requireContext()
@@ -129,7 +128,7 @@ class DetailTabsController(
     private val attachListener = FragmentOnAttachListener { _, child ->
         // also covers SponsorBlock fragments restored by the fragment manager
         if (child is SponsorBlockFragment) {
-            child.setListener(host.sponsorBlockListener)
+            host.configureSponsorBlockEditor(child)
         }
     }
 
@@ -146,7 +145,7 @@ class DetailTabsController(
         mediator.attach()
         childFm.addFragmentOnAttachListener(attachListener)
         childFm.fragments.filterIsInstance<SponsorBlockFragment>()
-            .forEach { it.setListener(host.sponsorBlockListener) }
+            .forEach { host.configureSponsorBlockEditor(it) }
         ChatStore.available.observe(fragment.viewLifecycleOwner) { syncChatTab() }
 
         // The views were recreated: show the very same tabs again, unless they were built for
@@ -510,7 +509,7 @@ class DetailTabsController(
             && (info == null || supportsSponsorBlock(info))) {
             add(DetailTab.SPONSOR_BLOCK) { streamInfo ->
                 SponsorBlockFragment(streamInfo).also {
-                    it.setListener(host.sponsorBlockListener)
+                    host.configureSponsorBlockEditor(it)
                     it.setSponsorBlockMode(SponsorBlockHelper.getSkippingMode(context))
                 }
             }

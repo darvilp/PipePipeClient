@@ -284,7 +284,7 @@ public class CommentsMiniInfoItemHolder extends InfoItemHolder {
                         if (timestampMatch == null) {
                             return url;
                         }
-                        return "internal://timestamp/" + timestampMatch.seconds();
+                        return streamUrl + "#timestamp=" + timestampMatch.seconds();
                     } catch (final Exception ex) {
                         Log.e(TAG, "Unable to process url='" + url + "' as timestampLink", ex);
                         return url;

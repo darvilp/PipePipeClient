@@ -31,14 +31,23 @@ class PlayerStartController(private val player: Player) {
         val newQueue = SerializedCache.getInstance().take(queueCache, PlayQueue::class.java)
             ?: return
 
-        val oldPlayerType = player.playerType
-        player.setPlayerType(PlayerHelper.retrievePlayerTypeFromIntent(intent))
-        // We need to setup audioOnly before super(), see "sourceOf"
-        player.setAudioOnly(player.audioPlayerSelected())
+        val activeQueue = player.playQueue
+        if (intent.getBooleanExtra(PlayerIntentConstants.ENQUEUE_NEXT_AND_PLAY, false)
+            && activeQueue != null
+        ) {
+            val itemToPlay = newQueue.getItem() ?: return
+            player.sourceController.sourceSwitchRecoveryItem = null
+            player.saveStreamProgressState()
+            activeQueue.insertNextAndSelect(itemToPlay)
+            activeQueue.setRecovery(activeQueue.index, newQueue.getRecoveryPosition(itemToPlay))
+            player.notifyQueueUpdateToListeners()
+            player.play()
+            return
+        }
 
         val playQueue = player.playQueue
 
-        // Resolve enqueue intents
+        // Appending to an active queue must leave the service's current mode alone.
         if (intent.getBooleanExtra(PlayerIntentConstants.ENQUEUE, false) && playQueue != null) {
             playQueue.append(newQueue.streams)
             return
@@ -53,6 +62,13 @@ class PlayerStartController(private val player: Player) {
             playQueue.move(playQueue.size() - 1, currentIndex + 1)
             return
         }
+
+        val oldPlayerType = player.playerType
+        player.setPlayerType(PlayerHelper.retrievePlayerTypeFromIntent(intent))
+
+        player.sourceController.sourceSwitchRecoveryItem = null
+        player.sourceController.isMainPlayerDetailsBrowsing = false
+        player.setAudioOnly(player.audioPlayerSelected())
 
         val parametersBuilder = player.trackSelector.buildUponParameters()
         parametersBuilder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, player.audioPlayerSelected())
@@ -112,9 +128,11 @@ class PlayerStartController(private val player: Player) {
                 player.simpleExoPlayer.prepare()
             }
             if (player.shouldSeek()) {
+                val position = newQueue.getRecoveryPosition(newQueue.getItem()!!)
+                playQueue.setRecovery(playQueue.index, position)
                 player.simpleExoPlayer.seekTo(
                     playQueue.index,
-                    newQueue.getRecoveryPosition(newQueue.getItem()!!),
+                    position,
                 )
             }
             player.simpleExoPlayer.setPlayWhenReady(playWhenReady)

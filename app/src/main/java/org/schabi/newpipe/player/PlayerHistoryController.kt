@@ -59,10 +59,9 @@ class PlayerHistoryController(private val player: Player) {
         val playQueue = player.playQueue
         if (player.exoPlayerIsNull() || player.currentMetadata == null || playQueue == null
             || playQueue.index != player.simpleExoPlayer.currentMediaItemIndex
+            || player.currentItem != playQueue.item
         ) {
-            // Make sure play queue and current window index are equal, to prevent saving state for
-            // the wrong stream on discontinuity (e.g. when the stream just changed but the
-            // playQueue index and currentMetadata still haven't updated)
+            // Queue replacement can precede synchronization; keep the new item's requested start.
             return
         }
         // Save current position. It will help to restore this position once a user

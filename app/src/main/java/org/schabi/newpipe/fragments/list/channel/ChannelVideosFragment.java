@@ -711,6 +711,11 @@ public class ChannelVideosFragment extends BaseListInfoFragment<StreamInfoItem, 
         playlistControlBinding.playlistCtrlPlayBgButton
                 .setOnClickListener(view -> NavigationHelper
                         .playOnBackgroundPlayer(activity, getPlayQueue(), false));
+
+        playlistControlBinding.playlistCtrlPlayAllButton.setOnLongClickListener(view -> {
+            NavigationHelper.enqueueOnPlayer(activity, getPlayQueue());
+            return true;
+        });
     }
 
     private void showContentNotSupportedIfNeeded() {

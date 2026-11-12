@@ -373,6 +373,11 @@ public class PlaylistFragment extends BaseListInfoFragment<StreamInfoItem, Playl
         playlistControlBinding.playlistCtrlPlayBgButton.setOnClickListener(view ->
                 NavigationHelper.
                         playOnBackgroundPlayer(activity, getPlayQueue(), false));
+
+        playlistControlBinding.playlistCtrlPlayAllButton.setOnLongClickListener(view -> {
+            NavigationHelper.enqueueOnPlayer(activity, getPlayQueue());
+            return true;
+        });
     }
 
     private void showSortDialog() {

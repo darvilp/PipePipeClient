@@ -865,7 +865,10 @@ public class MainActivity extends AppCompatActivity {
                                 getApplicationContext(), getSupportFragmentManager(),
                                 serviceId, url, title, playQueue, switchingPlayers,
                                 intent.getBooleanExtra(
-                                        VideoDetailFragment.KEY_FORCE_PLAY_FULLSCREEN, false));
+                                        VideoDetailFragment.KEY_FORCE_PLAY_FULLSCREEN, false),
+                                intent.getLongExtra(VideoDetailFragment.KEY_MODE_SWITCH_REQUEST, 0),
+                                intent.getBooleanExtra(
+                                        VideoDetailFragment.KEY_MODE_SWITCH_FULLSCREEN, false));
                         break;
                     case CHANNEL:
                         NavigationHelper.openChannelFragment(getSupportFragmentManager(),

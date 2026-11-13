@@ -303,7 +303,7 @@ public class StatisticsPlaylistFragment
             playlistControlBinding.playlistCtrlPlayBgButton.setOnClickListener(null);
             playlistControlBinding.playlistCtrlPlayAllButton.setOnClickListener(null);
             playlistControlBinding.playlistCtrlPlayPopupButton.setOnClickListener(null);
-            playlistControlBinding.playlistCtrlPlayAllButton.setOnLongClickListener(null);
+            playlistControlBinding.getRoot().setEnqueueOnLongPress(null);
 
             headerBinding = null;
             playlistControlBinding = null;
@@ -391,10 +391,7 @@ public class StatisticsPlaylistFragment
         playlistControlBinding.playlistCtrlPlayBgButton.setOnClickListener(view ->
                 NavigationHelper.playOnBackgroundPlayer(activity, getPlayQueue(), false));
 
-        playlistControlBinding.playlistCtrlPlayAllButton.setOnLongClickListener(view -> {
-            NavigationHelper.enqueueOnPlayer(activity, getPlayQueue());
-            return true;
-        });
+        playlistControlBinding.getRoot().setEnqueueOnLongPress(this::getPlayQueue);
 
         hideLoading();
     }

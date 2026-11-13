@@ -104,12 +104,9 @@ class PlayerStartController(private val player: Player) {
             return
         }
 
-        val oldPlayerType = player.playerType
-        player.setPlayerType(PlayerHelper.retrievePlayerTypeFromIntent(intent))
-
         val playQueue = player.playQueue
 
-        // Resolve enqueue intents
+        // Appending to an active queue must leave the service's current mode alone.
         if (intent.getBooleanExtra(PlayerIntentConstants.ENQUEUE, false) && playQueue != null) {
             playQueue.append(newQueue.streams)
             return
@@ -125,9 +122,11 @@ class PlayerStartController(private val player: Player) {
             return
         }
 
+        val oldPlayerType = player.playerType
+        player.setPlayerType(PlayerHelper.retrievePlayerTypeFromIntent(intent))
+
         cancelModeRequest()
         player.sourceController.isMainPlayerDetailsBrowsing = false
-        // Queue appends retain the current audio-only browsing source.
         player.setAudioOnly(player.audioPlayerSelected())
 
         val parametersBuilder = player.trackSelector.buildUponParameters()

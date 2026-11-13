@@ -349,6 +349,14 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
                     }
                 }
             }
+
+            binding.playlistCtrlPlayAllButton.setOnLongClickListener {
+                val playQueue = getPlayQueue()
+                if (playQueue.streams.isNotEmpty()) {
+                    NavigationHelper.enqueueOnPlayer(activity, playQueue)
+                }
+                true
+            }
         }
     }
 
@@ -483,6 +491,7 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
         _feedBinding = null
         playlistControlBinding?.let { binding ->
             binding.playlistCtrlPlayAllButton.setOnClickListener(null)
+            binding.playlistCtrlPlayAllButton.setOnLongClickListener(null)
             binding.playlistCtrlPlayPopupButton.setOnClickListener(null)
             binding.playlistCtrlPlayBgButton.setOnClickListener(null)
             binding.playlistCtrlPlayPopupButton.setOnLongClickListener(null)

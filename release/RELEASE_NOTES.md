@@ -1,12 +1,7 @@
-# PipePipe All Features 5.6.0-beta1-unofficial.18
+# PipePipe All Features 5.6.0-beta1-unofficial.19
 
-This regular fork release builds on upstream's 5.6.0-beta1 development source.
+- Long-press Background or Popup on a video detail page to append the displayed video.
+- Long-press Play all, Background or Popup on a list header to append the loaded items.
+- Enqueue keeps the current item and player mode. A normal tap still starts playback in the selected mode.
 
-- Keep the active queue when a timestamp link seeks within the playing video.
-- Retain separate SponsorBlock drafts when switching between videos.
-- Switch between main, background and popup playback without replacing the session.
-- Long-press Play all to append loaded items to the active queue.
-- Cancel thumbnail requests when closing the detail screen.
-- Retain per-group subscription content rules, nonblocking feed refresh, and queue drag improvements.
-
-The established All Features app identity and signer support an in-place update from .17. Android 7.0 or later is required. Download the APK for your device's ABI and use the included checksums and source manifest to verify it.
+This updates .18 in place using the same All Features app identity and signing key. Android 7.0 or later is required.

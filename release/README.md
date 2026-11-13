@@ -66,12 +66,14 @@ Android callback, database and continuous-drag regressions accompany the fixes. 
 
 ## Publication
 
+Before building a release candidate, carry forward the release workflow from the current channel. The tag runs the workflow in the accepted commit, so check that it sets `draft: true` and `prerelease: false`.
+
 After candidate acceptance and publication approval:
 
 1. Make both exact source revisions available on the fork repositories using normal pushes.
 2. Tag the accepted client commit as `all-features/v<version_name>` from its manifest, refusing an existing tag.
-3. Let the tag workflow create a draft prerelease in `darvilp/PipePipeClient` with the four verified ABI APKs, checksums, generated manifests and release notes.
-4. Verify the draft target and downloaded asset hashes before publishing it as a prerelease.
+3. Let the tag workflow create a draft release in `darvilp/PipePipeClient` with the four verified ABI APKs, checksums, generated manifests and release notes.
+4. Verify the draft target and downloaded asset hashes before publishing it as a regular GitHub release. Verify that both Draft and Pre-release are off after publication.
 
 Keep previous releases and local APK copies. A safe rollback may require rebuilding corrected source with a higher version code; do not assume an older APK can downgrade newer database state. Runtime acceptance remains device-specific even though every ABI split receives the same structural verification.
 

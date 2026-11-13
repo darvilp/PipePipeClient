@@ -7,6 +7,11 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.os.IBinder;
+import android.view.LayoutInflater;
+import android.view.ContextThemeWrapper;
+
+import org.schabi.newpipe.databinding.PlayerBinding;
+import org.schabi.newpipe.util.ThemeHelper;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
@@ -51,6 +56,8 @@ public class PlayerDiscontinuityRegressionTest {
                                 throw new AssertionError("Unexpected service call: " + method);
                             });
             player = new Player(serviceInterface);
+            setField("binding", PlayerBinding.inflate(LayoutInflater.from(
+                    new ContextThemeWrapper(context, ThemeHelper.getThemeForService(context, -1)))));
             player.simpleExoPlayer = new ExoPlayer.Builder(context).build();
             setField("exoPlayerEventAdapter", new ExoPlayerEventAdapter(player));
             queue = new SinglePlayQueue(Arrays.asList(item("first"), item("picked"),

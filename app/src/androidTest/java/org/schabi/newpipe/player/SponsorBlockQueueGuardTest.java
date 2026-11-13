@@ -8,6 +8,11 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.os.IBinder;
+import android.view.LayoutInflater;
+import android.view.ContextThemeWrapper;
+
+import org.schabi.newpipe.databinding.PlayerBinding;
+import org.schabi.newpipe.util.ThemeHelper;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
@@ -59,6 +64,8 @@ public class SponsorBlockQueueGuardTest {
                                 throw new AssertionError("Unexpected service call: " + method);
                             });
             player = new Player(serviceInterface);
+            setField("binding", PlayerBinding.inflate(LayoutInflater.from(
+                    new ContextThemeWrapper(context, ThemeHelper.getThemeForService(context, -1)))));
             exoPlayer = new ExoPlayer.Builder(context).build();
             exoPlayer.setVolume(0);
             player.simpleExoPlayer = exoPlayer;
@@ -68,8 +75,8 @@ public class SponsorBlockQueueGuardTest {
                     new StreamInfoItem(0, "https://example.invalid/second", "Second",
                             StreamType.AUDIO_STREAM)), 0);
             queue.init();
-            // Keep UI and network resolution outside this fixture. Production guard and manual
-            // queue navigation still execute on a real Player and a real ExoPlayer.
+            // The detached view binding follows the normal player cleanup lifecycle.
+            // Queue navigation executes on a real Player and a real ExoPlayer.
             setField("playQueue", queue);
             setField("currentItem", queue.getItem());
             setField("currentMetadata", queue.getItem());

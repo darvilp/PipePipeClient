@@ -132,12 +132,25 @@ public final class InternalUrlsHandler {
 
         final Player player = PlayerHolder.getInstance().getPlayer();
         final PlayQueue activeQueue = player == null ? null : player.getPlayQueue();
-        if (pattern == HASHTAG_TIMESTAMP_PATTERN && activeQueue != null
-                && !activeQueue.isDisposed() && activeQueue.getItem() != null
-                && activeQueue.getItem().getServiceId() == service.getServiceId()
-                && matchedUrl.equals(activeQueue.getItem().getUrl())) {
-            DetailPlayerEvents.seekTo(seconds);
-            return true;
+        if (activeQueue != null && !activeQueue.isDisposed() && activeQueue.getItem() != null
+                && activeQueue.getItem().getServiceId() == service.getServiceId()) {
+            if (pattern == HASHTAG_TIMESTAMP_PATTERN
+                    && matchedUrl.equals(activeQueue.getItem().getUrl())) {
+                DetailPlayerEvents.seekTo(seconds);
+                return true;
+            }
+            if (pattern == AMPERSAND_TIMESTAMP_PATTERN && linkType == StreamingService.LinkType.STREAM
+                    && seconds >= 0 && activeQueue.size() > 1) {
+                final LinkHandlerFactory factory = service.getStreamLHFactory();
+                try {
+                    if (factory.getId(matchedUrl).equals(factory.getId(activeQueue.getItem().getUrl()))
+                            && player.seekActiveQueueFromLink(seconds * 1000L)) {
+                        return true;
+                    }
+                } catch (final ParsingException ignored) {
+                    // Let the normal timestamp route handle unsupported URLs.
+                }
+            }
         }
 
         if (linkType == StreamingService.LinkType.STREAM && seconds != -1) {

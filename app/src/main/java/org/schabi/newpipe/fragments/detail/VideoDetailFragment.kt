@@ -372,7 +372,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         sponsorBlock.saveDraft()
-        outState.putBundle("sponsorBlockDraft", sponsorBlockDraft)
+        outState.putBundle("sponsorBlockDrafts", Bundle(sponsorBlockDrafts))
         outState.putInt(STATE_SERVICE_ID, vm.serviceId)
         outState.putString(STATE_TITLE, vm.title)
         outState.putString(STATE_URL, vm.url)
@@ -389,7 +389,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
 
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
         super.onRestoreInstanceState(savedInstanceState)
-        sponsorBlockDraft = savedInstanceState.getBundle("sponsorBlockDraft")
+        savedInstanceState.getBundle("sponsorBlockDrafts")?.let(sponsorBlockDrafts::putAll)
         pendingInitialData = InitialData(
             savedInstanceState.getInt(STATE_SERVICE_ID, NO_SERVICE_ID),
             savedInstanceState.getString(STATE_URL),
@@ -428,6 +428,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         super.onResume()
         DetailPlayerEvents.detailResumed()
         playerView?.setupBrightness()
+        sponsorBlock.saveDraft()
         tabs?.onResume()
         playerView?.updateStickyPlayerMode()
     }
@@ -555,6 +556,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
     override fun showLoading() {
         super.showLoading()
         header?.showLoading(vm.serviceId, vm.url, vm.title)
+        sponsorBlock.saveDraft()
         tabs?.showLoading()
     }
 
@@ -675,23 +677,19 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
 
     // Players
 
-    private fun openBackgroundPlayer(append: Boolean) {
+    private fun openBackgroundPlayer() {
         player?.changeFullscreen(false)
         // FIXME Workaround #7427
         player?.setRecovery()
         if (player == null) {
             playerHolder.startService(false, this)
         }
-        val queue = playQueueForIntent(append) ?: return
-        if (append) {
-            NavigationHelper.enqueueOnPlayer(requireActivity(), queue, PlayerType.AUDIO)
-        } else {
-            NavigationHelper.playOnBackgroundPlayer(requireActivity(), queue, true)
-            pendingPlaybackQueue = null
-        }
+        val queue = playQueueForIntent() ?: return
+        NavigationHelper.playOnBackgroundPlayer(requireActivity(), queue, true)
+        pendingPlaybackQueue = null
     }
 
-    private fun openPopupPlayer(append: Boolean) {
+    private fun openPopupPlayer() {
         val activity = requireActivity()
         if (!PermissionHelper.isPopupEnabled(activity)) {
             PermissionHelper.showPopupEnablementToast(activity)
@@ -706,13 +704,9 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
             player.setRecovery()
             player.changeFullscreen(false)
         }
-        val queue = playQueueForIntent(append) ?: return
-        if (append) {
-            NavigationHelper.enqueueOnPlayer(activity, queue, PlayerType.POPUP)
-        } else {
-            NavigationHelper.playOnPopupPlayer(activity, queue, true)
-            pendingPlaybackQueue = null
-        }
+        val queue = playQueueForIntent() ?: return
+        NavigationHelper.playOnPopupPlayer(activity, queue, true)
+        pendingPlaybackQueue = null
     }
 
     private fun openMainPlayer() {
@@ -731,7 +725,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
             player.play()
             return
         }
-        val queue = playQueueForIntent(false) ?: return
+        val queue = playQueueForIntent() ?: return
         PlaybackStartupTrace.mark(pendingStartupTraceId, "play_queue_ready")
         // The video view can still show parts of the popup. It is hidden until the player
         // shows it again once ready.
@@ -745,10 +739,10 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         pendingPlaybackQueue = null
     }
 
-    /** The queue to play: the current queue, or the current stream alone if [append]. */
-    private fun playQueueForIntent(append: Boolean): PlayQueue? {
+    /** The queue to play: the current queue, or the current stream alone if there is none. */
+    private fun playQueueForIntent(): PlayQueue? {
         val queue = pendingPlaybackQueue ?: vm.playQueue
-        if (!append && queue != null && !queue.isEmpty) {
+        if (queue != null && !queue.isEmpty) {
             return queue
         }
         // the queue may be empty, as it removes failing streams by itself
@@ -868,7 +862,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         when (action) {
             Action.PLAY_NOW_KEEP_QUEUE -> playDisplayedVideoNextInQueue(targetInfo)
             Action.ADD_TO_END -> NavigationHelper.enqueueOnPlayer(requireActivity(),
-                SinglePlayQueue(targetInfo), PlayerType.VIDEO)
+                SinglePlayQueue(targetInfo))
             Action.REPLACE_QUEUE -> replaceQueueAndPlayDisplayedVideo()
         }
     }
@@ -1112,18 +1106,14 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
 
     // Parts of the page
 
-    private var sponsorBlockDraft: Bundle? = null
+    private val sponsorBlockDrafts = Bundle()
 
     private val sponsorBlock = DetailSponsorBlock(this, object : DetailSponsorBlock.Host {
         override val player get() = this@VideoDetailFragment.player
         override val currentInfo get() = vm.currentInfo
         override val sponsorBlockFragment: SponsorBlockFragment?
             get() = tabs?.sponsorBlockFragment()
-        override var sponsorBlockDraft: Bundle?
-            get() = this@VideoDetailFragment.sponsorBlockDraft
-            set(value) {
-                this@VideoDetailFragment.sponsorBlockDraft = value
-            }
+        override val sponsorBlockDrafts get() = this@VideoDetailFragment.sponsorBlockDrafts
     })
 
     /** What the parts of the page need to know about the page and the player. */
@@ -1178,11 +1168,11 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
             vm.currentInfo?.let { actions?.openChannel(it.uploaderUrl, it.uploaderName) }
         }
 
-        override fun openBackgroundPlayer(append: Boolean) =
-            this@VideoDetailFragment.openBackgroundPlayer(append)
+        override fun openBackgroundPlayer() =
+            this@VideoDetailFragment.openBackgroundPlayer()
 
-        override fun openPopupPlayer(append: Boolean) =
-            this@VideoDetailFragment.openPopupPlayer(append)
+        override fun openPopupPlayer() =
+            this@VideoDetailFragment.openPopupPlayer()
 
         override fun playInMainPlayer() {
             handleMainPlayerPlayFromDetails()

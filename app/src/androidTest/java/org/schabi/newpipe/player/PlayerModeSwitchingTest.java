@@ -9,6 +9,7 @@ import static org.junit.Assert.assertTrue;
 
 import android.app.Activity;
 import android.app.Instrumentation;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
@@ -148,6 +149,7 @@ public class PlayerModeSwitchingTest {
         info.setStreamType(StreamType.VIDEO_STREAM);
         info.setDuration(30);
         info.setUploaderName("Synthetic fixture");
+        info.setThumbnailUrl(fixtureArtworkUri());
         info.setDescription(Description.EMPTY_DESCRIPTION);
         info.setAudioStreams(Collections.singletonList(new AudioStream.Builder()
                 .setId("live-idle-vod-audio")
@@ -385,7 +387,7 @@ public class PlayerModeSwitchingTest {
             final String displayedUrl = pendingReplacement ? activeUrl
                     : queue.getItem(1).getUrl();
             final PlayQueue replacement = pendingReplacement ? new SinglePlayQueue(
-                    new StreamInfoItem(0, activeUrl, "Replacement", StreamType.VIDEO_STREAM))
+                    fixtureItem(activeUrl, "Replacement", StreamType.VIDEO_STREAM))
                     : null;
             NavigationHelper.openVideoDetailFragment(host, host.getSupportFragmentManager(),
                     0, displayedUrl, "Browsed details", replacement, false);
@@ -463,8 +465,7 @@ public class PlayerModeSwitchingTest {
             activity.onCreateOptionsMenu(menu);
             activity.onOptionsItemSelected(menu.findItem(R.id.action_switch_main));
             original.handleIntent(NavigationHelper.getPlayerIntent(main,
-                    DeviceUtils.getPlayerServiceClass(), new SinglePlayQueue(new StreamInfoItem(
-                            0, replacementUrl, "Replacement", StreamType.VIDEO_STREAM)), false, false)
+                    DeviceUtils.getPlayerServiceClass(), new SinglePlayQueue(fixtureItem(replacementUrl, "Replacement", StreamType.VIDEO_STREAM)), false, false)
                     .putExtra(PlayerIntentConstants.PLAYER_TYPE, PlayerType.AUDIO.ordinal()));
         });
         instrumentation.waitForIdleSync();
@@ -922,8 +923,7 @@ public class PlayerModeSwitchingTest {
         final Player original = activity.player;
         final PlayQueue queue = original.getPlayQueue();
         instrumentation.runOnMainSync(() -> {
-            queue.append(new SinglePlayQueue(new StreamInfoItem(
-                    0, queue.getItem().getUrl(), "Duplicate", StreamType.VIDEO_STREAM)).getItem());
+            queue.append(new SinglePlayQueue(fixtureItem(queue.getItem().getUrl(), "Duplicate", StreamType.VIDEO_STREAM)).getItem());
             original.onShuffleClicked();
         });
         await(queue::isShuffled, "Shuffle applied");
@@ -1085,6 +1085,19 @@ public class PlayerModeSwitchingTest {
         }
     }
 
+    private static String fixtureArtworkUri() {
+        final Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        return "android.resource://" + context.getPackageName() + "/" + R.mipmap.ic_launcher;
+    }
+
+    private static StreamInfoItem fixtureItem(final String url, final String title,
+                                              final StreamType streamType) {
+        final StreamInfoItem item = new StreamInfoItem(0, url, title, streamType);
+        item.setUploaderName("Synthetic fixture");
+        item.setThumbnailUrl(fixtureArtworkUri());
+        return item;
+    }
+
     private void start(final PlayerType type) throws Exception {
         start(type, false, false);
     }
@@ -1132,6 +1145,7 @@ public class PlayerModeSwitchingTest {
                 info.setDuration(30);
                 info.setDescription(Description.EMPTY_DESCRIPTION);
                 info.setUploaderName("Synthetic fixture");
+                info.setThumbnailUrl(fixtureArtworkUri());
                 info.setVideoStreams(Collections.singletonList(new VideoStream.Builder()
                         .setId(streamId).setContent(mediaUrl, true)
                         .setMediaFormat(MediaFormat.MPEG_4).setResolution("144p")
@@ -1162,8 +1176,8 @@ public class PlayerModeSwitchingTest {
                 InfoCache.getInstance().putInfo(0, url, info, InfoItem.InfoType.STREAM);
             }
             final PlayQueue queue = new SinglePlayQueue(Arrays.asList(
-                    new StreamInfoItem(0, first, "First", streamType),
-                    new StreamInfoItem(0, second, "Second", streamType)), 0);
+                    fixtureItem(first, "First", streamType),
+                    fixtureItem(second, "Second", streamType)), 0);
             ContextCompat.startForegroundService(main, NavigationHelper.getPlayerIntent(main,
                     DeviceUtils.getPlayerServiceClass(), queue, false, live)
                     .putExtra(PlayerIntentConstants.PLAYER_TYPE, type.ordinal()));

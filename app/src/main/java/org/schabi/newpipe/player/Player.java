@@ -1116,6 +1116,26 @@ public final class Player {
         transportController.seekTo(positionMillis);
     }
 
+    /**
+     * Seeks an explicit playback link in the current queue without starting a replacement queue.
+     * The caller has already matched the link to the selected queue entry.
+     */
+    public boolean seekActiveQueueFromLink(final long positionMillis) {
+        if (isStopped() || playQueue == null || playQueue.isDisposed()
+                || playQueue.size() < 2 || playQueue.getItem() == null
+                || !playQueue.getItem().equals(getCurrentItem())
+                || playQueue.getIndex() != simpleExoPlayer.getCurrentMediaItemIndex()) {
+            return false;
+        }
+        final long duration = simpleExoPlayer.getDuration();
+        final long position = duration == C.TIME_UNSET
+                ? positionMillis : Math.min(positionMillis, duration);
+        playQueue.setRecovery(playQueue.getIndex(), position);
+        simpleExoPlayer.seekTo(playQueue.getIndex(), position);
+        simpleExoPlayer.play();
+        return true;
+    }
+
     public void seekToDefault() {
         transportController.seekToDefault();
     }

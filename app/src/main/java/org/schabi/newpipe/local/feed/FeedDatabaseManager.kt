@@ -125,9 +125,9 @@ class FeedDatabaseManager internal constructor(private val database: AppDatabase
         feedTable.unlinkOldLivestreams(subscriptionId)
 
         if (itemsToInsert.isNotEmpty()) {
-            // if item.uploaderName is null, write it as "Unknown"
+            // Normalize missing uploader names before writing feed entries.
             for ((item) in itemsToInsert) {
-                if (item.uploaderName == null) {
+                if (item.uploaderName.isNullOrEmpty()) {
                     item.uploaderName = "Unknown"
                 }
             }

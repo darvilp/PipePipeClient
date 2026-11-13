@@ -90,9 +90,9 @@ public class PendingQueueReplacementTest {
     private static PlayQueue queueForIntent(final VideoDetailFragment fragment) {
         try {
             final Method method = VideoDetailFragment.class.getDeclaredMethod(
-                    "playQueueForIntent", boolean.class);
+                    "playQueueForIntent");
             method.setAccessible(true);
-            return (PlayQueue) method.invoke(fragment, false);
+            return (PlayQueue) method.invoke(fragment);
         } catch (final ReflectiveOperationException error) {
             throw new AssertionError(error);
         }

@@ -35,7 +35,7 @@ class DetailSponsorBlock(
         val player: Player?
         val currentInfo: StreamInfo?
         val sponsorBlockFragment: SponsorBlockFragment?
-        var sponsorBlockDraft: Bundle?
+        val sponsorBlockDrafts: Bundle
     }
 
     private var submitSubscriber: Disposable? = null
@@ -44,18 +44,28 @@ class DetailSponsorBlock(
 
     fun configureEditor(editor: SponsorBlockFragment) {
         editor.setListener(this)
-        host.sponsorBlockDraft?.let {
-            editor.restoreDraft(it)
-            host.sponsorBlockDraft = null
+        val key = draftKey(editor.saveDraft())
+        if (key != null) {
+            host.sponsorBlockDrafts.getBundle(key)?.let(editor::restoreDraft)
+            host.sponsorBlockDrafts.remove(key)
         }
-        val info = host.currentInfo
-        editor.setSubmitting(info != null && info.url == submissionUrl
-            && info.serviceId == submissionServiceId)
+        val url = submissionUrl
+        editor.setSubmitting(url != null && editor.isForVideo(submissionServiceId, url))
     }
 
     fun saveDraft() {
-        host.sponsorBlockFragment?.let { host.sponsorBlockDraft = it.saveDraft() }
+        val draft = host.sponsorBlockFragment?.saveDraft() ?: return
+        val key = draftKey(draft) ?: return
+        if (draft.getLong("version") > 0 || draft.containsKey("start")
+            || draft.containsKey("end") || draft.containsKey("editorText")) {
+            host.sponsorBlockDrafts.putBundle(key, draft)
+        }
     }
+
+    private fun draftKey(draft: Bundle): String? =
+        draft.getString("videoUrl")?.let { draftKey(draft.getInt("serviceId"), it) }
+
+    private fun draftKey(serviceId: Int, videoUrl: String): String = "$serviceId:$videoUrl"
 
     fun onProgress() {
         host.sponsorBlockFragment?.refreshEditor()
@@ -191,9 +201,8 @@ class DetailSponsorBlock(
         val videoUrl = info.url
         val activeEditor = host.sponsorBlockFragment
             ?.takeIf { it.isForVideo(info.serviceId, videoUrl) }
-        val savedDraft = host.sponsorBlockDraft?.takeIf {
-            it.getString("videoUrl") == videoUrl && it.getInt("serviceId") == info.serviceId
-        }
+        val key = draftKey(info.serviceId, videoUrl)
+        val savedDraft = host.sponsorBlockDrafts.getBundle(key)
         val latestVersion = activeEditor?.draftVersion ?: savedDraft?.getLong("version", 0)
             ?: submittedEditor.draftVersion
         val latestDraftId = activeEditor?.draftId ?: savedDraft?.getString("draftId")
@@ -202,9 +211,7 @@ class DetailSponsorBlock(
         info.addSponsorBlockSegment(segment)
         if (unchanged) {
             info.removeSponsorBlockSegment(PENDING_UUID)
-            if (savedDraft != null) {
-                host.sponsorBlockDraft = null
-            }
+            host.sponsorBlockDrafts.remove(key)
         }
         val currentInfo = host.currentInfo?.takeIf {
             it.serviceId == info.serviceId && it.url == videoUrl

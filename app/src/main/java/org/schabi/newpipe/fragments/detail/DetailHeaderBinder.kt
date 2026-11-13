@@ -182,7 +182,13 @@ class DetailHeaderBinder(
         onHeightChanged()
     }
 
+    private var released = false
+
     fun release() {
+        released = true
+        PicassoHelper.cancelRequest(thumbnail.detailThumbnailImageView)
+        PicassoHelper.cancelRequest(content.detailSubChannelThumbnailView)
+        PicassoHelper.cancelRequest(content.detailUploaderThumbnailView)
         positionSubscriber?.dispose()
         positionSubscriber = null
         disposables.clear()
@@ -308,7 +314,9 @@ class DetailHeaderBinder(
                 override fun onSuccess() = Unit
 
                 override fun onError(e: Exception) {
-                    onError(ErrorInfo(e, UserAction.LOAD_IMAGE, info.thumbnailUrl, info))
+                    if (!released) {
+                        onError(ErrorInfo(e, UserAction.LOAD_IMAGE, info.thumbnailUrl, info))
+                    }
                 }
             })
         PicassoHelper.loadAvatar(info.subChannelAvatarUrl).tag(PICASSO_VIDEO_DETAILS_TAG)

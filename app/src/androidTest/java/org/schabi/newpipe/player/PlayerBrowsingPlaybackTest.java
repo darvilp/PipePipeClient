@@ -473,6 +473,28 @@ public class PlayerBrowsingPlaybackTest {
         });
     }
 
+    @Test
+    public void sameVideoUrlTimestampKeepsMultiItemQueue() throws Exception {
+        start(false);
+        final PlayQueue queue = player.getPlayQueue();
+        final ExoPlayer engine = player.simpleExoPlayer;
+        instrumentation.runOnMainSync(() -> {
+            queue.append(new SinglePlayQueue(fixtureMetadata.get(OTHER_URL)).getItem());
+            player.pause();
+            cacheFixtureMetadata();
+            assertTrue(InternalUrlsHandler.handleUrlDescriptionTimestamp(disposables,
+                    main, CURRENT_URL + "&t=12"));
+        });
+        await(() -> Math.abs(player.getCurrentPosition() - 12000) < 1000,
+                "Same-video URL timestamp must seek within the active queue");
+        instrumentation.runOnMainSync(() -> {
+            assertSame("URL timestamp must keep the active queue", queue, player.getPlayQueue());
+            assertSame(engine, player.simpleExoPlayer);
+            assertEquals(2, queue.size());
+            assertTrue(player.getPlayWhenReady());
+        });
+    }
+
     private void checkUrlTimestamp(final int seconds) throws Exception {
         start(false);
         final PlayQueue queue = player.getPlayQueue();
@@ -572,6 +594,16 @@ public class PlayerBrowsingPlaybackTest {
         });
 
         final Object audioManager = sourceManager();
+        instrumentation.runOnMainSync(() ->
+                NavigationHelper.enqueueOnPlayer(main,
+                        new SinglePlayQueue(fixtureMetadata.get(OTHER_URL))));
+        await(() -> queue.size() == 2, "Queue append delivered while browsing details");
+        instrumentation.runOnMainSync(() -> {
+            assertSame(queue, player.getPlayQueue());
+            assertTrue("Enqueue while browsing must preserve the active audio-only source",
+                    player.isAudioOnly());
+            assertSame(audioManager, sourceManager());
+        });
         instrumentation.runOnMainSync(() -> {
             before[0] = player.getCurrentPosition();
             before[1] = SystemClock.elapsedRealtime();

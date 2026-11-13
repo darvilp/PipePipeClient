@@ -121,9 +121,9 @@ public class SponsorBlockSubmissionTest {
     public void completionClearsUnchangedSavedDraftBeforeItsTabIsCreated() {
         withFixture(f -> {
             f.parent.editor = null;
-            set(f.parent, "sponsorBlockDraft", draft(f.original, 7));
+            f.parent.getSponsorBlockDrafts().putBundle(draftKey(f.original), draft(f.original, 7));
             assertFalse(f.complete()); // No visible editor needs a success dialog.
-            assertNull(get(f.parent, "sponsorBlockDraft"));
+            assertNull(f.parent.getSponsorBlockDrafts().getBundle(draftKey(f.original)));
             assertFalse(has(f.original, "TEMP"));
             assertTrue(has(f.original, "submitted"));
         });
@@ -133,9 +133,9 @@ public class SponsorBlockSubmissionTest {
     public void completionPreservesEditedSavedDraftBeforeItsTabIsCreated() {
         withFixture(f -> {
             f.parent.editor = null;
-            set(f.parent, "sponsorBlockDraft", draft(f.original, 8));
+            f.parent.getSponsorBlockDrafts().putBundle(draftKey(f.original), draft(f.original, 8));
             assertFalse(f.complete());
-            final Bundle saved = (Bundle) get(f.parent, "sponsorBlockDraft");
+            final Bundle saved = f.parent.getSponsorBlockDrafts().getBundle(draftKey(f.original));
             assertEquals(8, saved.getLong("version"));
             assertEquals("1:02.", saved.getString("editorText"));
             assertTrue(has(f.original, "TEMP"));
@@ -165,11 +165,39 @@ public class SponsorBlockSubmissionTest {
             replacementInfo.addSponsorBlockSegment(segment("TEMP"));
             set(f.parent, "currentInfo", replacementInfo);
             f.parent.editor = null;
-            set(f.parent, "sponsorBlockDraft", draft(replacementInfo, 7));
+            f.parent.getSponsorBlockDrafts().putBundle(draftKey(replacementInfo), draft(replacementInfo, 7));
 
             assertFalse(f.complete());
             assertFalse(has(replacementInfo, "TEMP"));
             assertTrue(has(replacementInfo, "submitted"));
+        });
+    }
+
+    @Test
+    public void draftsSurviveOpeningAndEditingAnotherVideo() {
+        withFixture(f -> {
+            f.controller.saveDraft();
+            final StreamInfo second = info("second");
+            final Bundle secondDraft = draft(second, 12);
+            secondDraft.putInt("start", 2345);
+            final SponsorBlockFragment secondEditor = editor(second, secondDraft);
+            f.show(second, secondEditor);
+            f.controller.configureEditor(secondEditor);
+            f.controller.saveDraft();
+
+            final SponsorBlockFragment returned = new SponsorBlockFragment(f.original);
+            f.show(f.original, returned);
+            f.controller.configureEditor(returned);
+            assertTrue("Returning to the first video must restore its draft",
+                    returned.saveDraft().containsKey("start"));
+            assertEquals(1234, returned.saveDraft().getInt("start"));
+            f.controller.saveDraft();
+
+            final SponsorBlockFragment secondAgain = new SponsorBlockFragment(second);
+            f.show(second, secondAgain);
+            f.controller.configureEditor(secondAgain);
+            assertEquals(2345, secondAgain.saveDraft().getInt("start"));
+            assertEquals(12, secondAgain.getDraftVersion());
         });
     }
 
@@ -179,14 +207,20 @@ public class SponsorBlockSubmissionTest {
             final Bundle saved = new Bundle();
             final VideoDetailFragment parent = new VideoDetailFragment();
             DetailTestState.model(parent);
-            set(parent, "sponsorBlockDraft", f.submittedEditor.saveDraft());
+            ((Bundle) get(parent, "sponsorBlockDrafts")).putBundle(
+                    draftKey(f.original), f.submittedEditor.saveDraft());
+            final StreamInfo second = info("second-state");
+            ((Bundle) get(parent, "sponsorBlockDrafts")).putBundle(
+                    draftKey(second), draft(second, 12));
             parent.onSaveInstanceState(saved);
             final VideoDetailFragment restoredParent = new VideoDetailFragment();
             DetailTestState.model(restoredParent);
             restoredParent.onRestoreInstanceState(saved);
             final Bundle secondSave = new Bundle();
             restoredParent.onSaveInstanceState(secondSave);
-            final Bundle restoredDraft = secondSave.getBundle("sponsorBlockDraft");
+            final Bundle restoredDrafts = secondSave.getBundle("sponsorBlockDrafts");
+            final Bundle restoredDraft = restoredDrafts.getBundle(draftKey(f.original));
+            assertEquals(12, restoredDrafts.getBundle(draftKey(second)).getLong("version"));
             assertEquals(f.original.getUrl(), restoredDraft.getString("videoUrl"));
             assertEquals(0, restoredDraft.getInt("serviceId"));
             assertEquals(1234, restoredDraft.getInt("start"));
@@ -381,6 +415,10 @@ public class SponsorBlockSubmissionTest {
         return result;
     }
 
+    private static String draftKey(final StreamInfo info) {
+        return info.getServiceId() + ":" + info.getUrl();
+    }
+
     private static Bundle draft(final StreamInfo info, final long version) {
         final Bundle result = new Bundle();
         result.putString("videoUrl", info.getUrl());
@@ -438,13 +476,12 @@ public class SponsorBlockSubmissionTest {
     private static final class FixtureHost implements DetailSponsorBlock.Host {
         private StreamInfo currentInfo;
         private SponsorBlockFragment editor;
-        private Bundle sponsorBlockDraft;
+        private final Bundle sponsorBlockDrafts = new Bundle();
 
         @Override public org.schabi.newpipe.player.Player getPlayer() { return null; }
         @Override public StreamInfo getCurrentInfo() { return currentInfo; }
         @Override public SponsorBlockFragment getSponsorBlockFragment() { return editor; }
-        @Override public Bundle getSponsorBlockDraft() { return sponsorBlockDraft; }
-        @Override public void setSponsorBlockDraft(final Bundle value) { sponsorBlockDraft = value; }
+        @Override public Bundle getSponsorBlockDrafts() { return sponsorBlockDrafts; }
     }
 
     private static final class Fixture {

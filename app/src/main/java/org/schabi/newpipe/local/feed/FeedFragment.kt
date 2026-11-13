@@ -79,7 +79,6 @@ import org.schabi.newpipe.ktx.slideUp
 import org.schabi.newpipe.local.feed.item.StreamItem
 import org.schabi.newpipe.local.feed.service.FeedLoadService
 import org.schabi.newpipe.local.subscription.SubscriptionManager
-import org.schabi.newpipe.player.PlayerService
 import org.schabi.newpipe.player.playqueue.PlayQueue
 import org.schabi.newpipe.player.playqueue.SinglePlayQueue
 import org.schabi.newpipe.util.DeviceUtils
@@ -355,31 +354,10 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
                 }
             }
 
-            // Long click listeners for enqueue functionality
             binding.playlistCtrlPlayAllButton.setOnLongClickListener {
                 val playQueue = getPlayQueue()
                 if (playQueue.streams.isNotEmpty()) {
-                    NavigationHelper.enqueueOnPlayer(
-                        activity,
-                        playQueue,
-                        PlayerService.PlayerType.VIDEO
-                    )
-                }
-                true
-            }
-
-            binding.playlistCtrlPlayPopupButton.setOnLongClickListener {
-                val playQueue = getPlayQueue()
-                if (playQueue.streams.isNotEmpty()) {
-                    NavigationHelper.enqueueOnPlayer(activity, playQueue, PlayerService.PlayerType.POPUP)
-                }
-                true
-            }
-
-            binding.playlistCtrlPlayBgButton.setOnLongClickListener {
-                val playQueue = getPlayQueue()
-                if (playQueue.streams.isNotEmpty()) {
-                    NavigationHelper.enqueueOnPlayer(activity, playQueue, PlayerService.PlayerType.AUDIO)
+                    NavigationHelper.enqueueOnPlayer(activity, playQueue)
                 }
                 true
             }
@@ -517,9 +495,9 @@ class FeedFragment : BaseStateFragment<FeedState>(), BackPressable {
         _feedBinding = null
         playlistControlBinding?.let { binding ->
             binding.playlistCtrlPlayAllButton.setOnClickListener(null)
+            binding.playlistCtrlPlayAllButton.setOnLongClickListener(null)
             binding.playlistCtrlPlayPopupButton.setOnClickListener(null)
             binding.playlistCtrlPlayBgButton.setOnClickListener(null)
-            binding.playlistCtrlPlayAllButton.setOnLongClickListener(null)
             binding.playlistCtrlPlayPopupButton.setOnLongClickListener(null)
             binding.playlistCtrlPlayBgButton.setOnLongClickListener(null)
         }

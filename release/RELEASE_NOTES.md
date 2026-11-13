@@ -1,14 +1,12 @@
-# PipePipe All Features 5.5.0-unofficial.17
+# PipePipe All Features 5.6.0-beta1-unofficial.18
 
-This dogfooding build synchronizes the fork with upstream client dev at `118ffc86b` and extractor main at `28a1a5ee8`.
+This regular fork release builds on upstream's 5.6.0-beta1 development source.
 
-- Port queue-preserving browsing, explicit playback choices, timestamp routing and mode switching to upstream's Kotlin detail screen and player event architecture.
-- Port the precise SponsorBlock editor, retained drafts and queue-advance hold to the new detail components.
-- Retain nonblocking feed refresh, subscription-group content rules, header enqueue behavior and queue drag improvements.
-- Adopt upstream's SABR token-renewal fix at `b336bb654`. The extractor follows current upstream.
+- Keep the active queue when a timestamp link seeks within the playing video.
+- Retain separate SponsorBlock drafts when switching between videos.
+- Switch between main, background and popup playback without replacing the session.
+- Long-press Play all to append loaded items to the active queue.
+- Cancel thumbnail requests when closing the detail screen.
+- Retain per-group subscription content rules, nonblocking feed refresh, and queue drag improvements.
 
-The app is PipePipe All Features (Unofficial), package `InfinityLoop1309.NewPipeEnhanced.debug.allfeatures`, signed with the established All Features certificate. Release APKs are minified and non-debuggable. The arm64 version code is **112404**, supporting an in-place update from `.16`.
-
-Upstream now requires Android 7.0 or later, API 24. The existing content-rule database schema is retained. Updates are manual through the fork's release page.
-
-Use `SHA256SUMS` and the generated source manifest to identify the exact APKs and source revisions. Runtime validation and signed-upgrade results are recorded separately with the local dogfooding handoff.
+The established All Features app identity and signer support an in-place update from .17. Android 7.0 or later is required. Download the APK for your device's ABI and use the included checksums and source manifest to verify it.

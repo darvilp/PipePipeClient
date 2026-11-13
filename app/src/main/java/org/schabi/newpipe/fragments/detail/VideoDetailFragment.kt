@@ -30,7 +30,6 @@ import org.schabi.newpipe.fragments.BackPressable
 import org.schabi.newpipe.fragments.BaseStateFragment
 import org.schabi.newpipe.fragments.detail.tabs.DetailTabsController
 import org.schabi.newpipe.fragments.list.sponsorblock.SponsorBlockFragment
-import org.schabi.newpipe.fragments.list.sponsorblock.SponsorBlockFragmentListener
 import org.schabi.newpipe.player.PlaybackStartupTrace
 import org.schabi.newpipe.player.Player
 import org.schabi.newpipe.player.PlayerIntentConstants
@@ -372,6 +371,8 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        sponsorBlock.saveDraft()
+        outState.putBundle("sponsorBlockDrafts", Bundle(sponsorBlockDrafts))
         outState.putInt(STATE_SERVICE_ID, vm.serviceId)
         outState.putString(STATE_TITLE, vm.title)
         outState.putString(STATE_URL, vm.url)
@@ -388,6 +389,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
 
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
         super.onRestoreInstanceState(savedInstanceState)
+        savedInstanceState.getBundle("sponsorBlockDrafts")?.let(sponsorBlockDrafts::putAll)
         pendingInitialData = InitialData(
             savedInstanceState.getInt(STATE_SERVICE_ID, NO_SERVICE_ID),
             savedInstanceState.getString(STATE_URL),
@@ -426,6 +428,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         super.onResume()
         DetailPlayerEvents.detailResumed()
         playerView?.setupBrightness()
+        sponsorBlock.saveDraft()
         tabs?.onResume()
         playerView?.updateStickyPlayerMode()
     }
@@ -447,6 +450,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         clearModeSurfaceCallback()
         handler.removeCallbacksAndMessages(null)
         sheet?.release()
+        sponsorBlock.saveDraft()
         tabs?.release()
         header?.release()
         actions?.release()
@@ -552,6 +556,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
     override fun showLoading() {
         super.showLoading()
         header?.showLoading(vm.serviceId, vm.url, vm.title)
+        sponsorBlock.saveDraft()
         tabs?.showLoading()
     }
 
@@ -584,6 +589,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         vm.currentInfo = info
         vm.setInitialData(info.serviceId, info.originalUrl, info.name, vm.playQueue)
         if (rebuildTabs) {
+            sponsorBlock.saveDraft()
             tabs?.showInfo(info)
         }
         header?.showInfo(info, vm.playQueue)
@@ -981,7 +987,7 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         if (!player.isPlaying || vm.playQueue == null) {
             return
         }
-        sponsorBlock.onProgress(currentProgress)
+        sponsorBlock.onProgress()
         if (player.playQueue?.item?.url == vm.url) {
             header?.showPlaybackProgress(currentProgress.toLong(), duration.toLong())
         }
@@ -1030,6 +1036,8 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
     }
 
     override fun onFullscreenStateChanged(fullscreen: Boolean) {
+        tabs?.sponsorBlockFragment()?.setHostVisible(!fullscreen
+            && hosts.sheetState == BottomSheetBehavior.STATE_EXPANDED)
         sheet?.updateDraggableForFullscreen()
         playerView?.setupBrightness()
         val view = playerService?.view
@@ -1098,11 +1106,14 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
 
     // Parts of the page
 
+    private val sponsorBlockDrafts = Bundle()
+
     private val sponsorBlock = DetailSponsorBlock(this, object : DetailSponsorBlock.Host {
         override val player get() = this@VideoDetailFragment.player
         override val currentInfo get() = vm.currentInfo
         override val sponsorBlockFragment: SponsorBlockFragment?
             get() = tabs?.sponsorBlockFragment()
+        override val sponsorBlockDrafts get() = this@VideoDetailFragment.sponsorBlockDrafts
     })
 
     /** What the parts of the page need to know about the page and the player. */
@@ -1115,7 +1126,6 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
         override val serviceId get() = vm.serviceId
         override val isLoading get() = this@VideoDetailFragment.isLoading.get()
         override val isFullscreen get() = player?.isFullscreen == true
-        override val sponsorBlockListener: SponsorBlockFragmentListener get() = sponsorBlock
 
         override var savedSheetState: Int
             get() = sheetStateToSave
@@ -1125,6 +1135,16 @@ class VideoDetailFragment : BaseStateFragment<StreamInfo>(), BackPressable,
 
         override val sheetState: Int
             get() = sheetBehavior()?.state ?: sheetStateToSave
+
+        override fun onSheetStateChanged(state: Int) {
+            tabs?.sponsorBlockFragment()?.setHostVisible(
+                state == BottomSheetBehavior.STATE_EXPANDED && !isFullscreen)
+        }
+
+        override fun configureSponsorBlockEditor(editor: SponsorBlockFragment) {
+            sponsorBlock.configureEditor(editor)
+            editor.setHostVisible(sheetState == BottomSheetBehavior.STATE_EXPANDED && !isFullscreen)
+        }
 
         override fun onSheetHidden() = cleanUp()
 

@@ -41,7 +41,11 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.schabi.newpipe.MainActivity;
+import org.schabi.newpipe.NewPipeDatabase;
 import org.schabi.newpipe.R;
+import org.schabi.newpipe.database.AppDatabase;
+import org.schabi.newpipe.database.playlist.model.PlaylistEntity;
+import org.schabi.newpipe.database.stream.model.StreamEntity;
 import org.schabi.newpipe.extractor.InfoItem;
 import org.schabi.newpipe.extractor.comments.CommentsInfoItem;
 import org.schabi.newpipe.extractor.MediaFormat;
@@ -54,6 +58,7 @@ import org.schabi.newpipe.extractor.stream.VideoStream;
 import org.schabi.newpipe.fragments.detail.VideoDetailFragment;
 import org.schabi.newpipe.info_list.InfoItemBuilder;
 import org.schabi.newpipe.info_list.holder.CommentsMiniInfoItemHolder;
+import org.schabi.newpipe.local.playlist.LocalPlaylistManager;
 import org.schabi.newpipe.player.PlayerService.PlayerType;
 import org.schabi.newpipe.player.event.PlayerEventListener;
 import org.schabi.newpipe.player.helper.PlayerHolder;
@@ -237,6 +242,86 @@ public class PlayerBrowsingPlaybackTest {
             player.pause();
             assertEquals(12000, player.getCurrentPosition(), 1000);
         });
+    }
+
+    @Test
+    public void detailPlaybackHoldsAppendInVideoMode() throws Exception {
+        checkDetailPlaybackHoldsAppend(PlayerType.VIDEO);
+    }
+
+    @Test
+    public void detailPlaybackHoldsAppendInBackgroundMode() throws Exception {
+        checkDetailPlaybackHoldsAppend(PlayerType.AUDIO);
+    }
+
+    @Test
+    public void detailPlaybackHoldsAppendInPopupMode() throws Exception {
+        checkDetailPlaybackHoldsAppend(PlayerType.POPUP);
+    }
+
+    private void checkDetailPlaybackHoldsAppend(final PlayerType type) throws Exception {
+        browseTimestampedVideo(type);
+        final PlayQueue queue = player.getPlayQueue();
+        final ExoPlayer engine = player.simpleExoPlayer;
+        instrumentation.runOnMainSync(() ->
+                queue.append(new SinglePlayQueue(fixtureMetadata.get(CURRENT_URL)).getItem()));
+        checkHoldsAppend(type, queue, engine, R.id.detail_controls_background,
+                R.id.detail_controls_popup);
+    }
+
+    @Test
+    public void localPlaylistPlaybackHoldsAppendInActiveMode() throws Exception {
+        start(false);
+        final PlayQueue queue = player.getPlayQueue();
+        final ExoPlayer engine = player.simpleExoPlayer;
+        final AppDatabase db = NewPipeDatabase.getInstance(instrumentation.getTargetContext());
+        final String name = "Queue hold fixture";
+        final long playlistId = db.playlistDAO().insert(new PlaylistEntity(name, null, -1));
+        try {
+            new LocalPlaylistManager(db).appendToPlaylist(playlistId,
+                    Collections.singletonList(new StreamEntity(fixtureMetadata.get(OTHER_URL))))
+                    .blockingGet();
+            instrumentation.runOnMainSync(() -> {
+                // Collapse the details sheet so the local playlist header is on screen.
+                main.onBackPressed();
+                NavigationHelper.openLocalPlaylistFragment(main.getSupportFragmentManager(),
+                        playlistId, name);
+            });
+            await(() -> {
+                final View button = main.findViewById(R.id.playlist_ctrl_play_all_button);
+                return button != null && button.isShown() && button.hasOnClickListeners();
+            }, "Local playlist controls are ready");
+            checkHoldsAppend(PlayerType.VIDEO, queue, engine, R.id.playlist_ctrl_play_all_button,
+                    R.id.playlist_ctrl_play_bg_button, R.id.playlist_ctrl_play_popup_button);
+        } finally {
+            db.playlistDAO().deletePlaylist(playlistId);
+        }
+    }
+
+    private void checkHoldsAppend(final PlayerType type, final PlayQueue queue,
+                                  final ExoPlayer engine, final int... buttonIds) {
+        for (final int buttonId : buttonIds) {
+            final int[] expectedSize = new int[1];
+            instrumentation.runOnMainSync(() -> {
+                expectedSize[0] = queue.size() + 1;
+                final View button = main.findViewById(buttonId);
+                assertNotNull(button);
+                assertTrue("Playback button must consume a long press: "
+                        + main.getResources().getResourceEntryName(buttonId),
+                        button.performLongClick());
+            });
+            await(() -> queue.size() == expectedSize[0],
+                    "Long press must append exactly one item to the active queue");
+            instrumentation.runOnMainSync(() -> {
+                assertSame(queue, player.getPlayQueue());
+                assertSame(engine, player.simpleExoPlayer);
+                assertEquals(type, player.getPlayerType());
+                assertEquals(0, queue.getIndex());
+                assertEquals(CURRENT_URL, queue.getItem().getUrl());
+                assertEquals(OTHER_URL, queue.getItem(queue.size() - 1).getUrl());
+                assertTrue(player.getPlayWhenReady());
+            });
+        }
     }
 
     @Test

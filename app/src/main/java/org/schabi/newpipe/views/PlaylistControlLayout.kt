@@ -5,6 +5,9 @@ import android.util.AttributeSet
 import android.widget.LinearLayout
 import androidx.preference.PreferenceManager
 import org.schabi.newpipe.R
+import org.schabi.newpipe.databinding.PlaylistControlBinding
+import org.schabi.newpipe.player.playqueue.PlayQueue
+import org.schabi.newpipe.util.NavigationHelper
 
 /**
  * Control bar (background / play all / popup). Call [configure] with the page it is shown on
@@ -26,6 +29,25 @@ class PlaylistControlLayout @JvmOverloads constructor(
         )
         disabled = enabled?.contains(pageKey) != true
         if (disabled) super.setVisibility(GONE)
+    }
+
+    /** All playback buttons append to the same queue on hold. */
+    fun setEnqueueOnLongPress(queue: (() -> PlayQueue)?) {
+        val binding = PlaylistControlBinding.bind(this)
+        val listener = queue?.let { createQueue ->
+            OnLongClickListener {
+                val items = createQueue()
+                if (!items.isEmpty) {
+                    NavigationHelper.enqueueOnPlayer(context, items)
+                }
+                true
+            }
+        }
+        listOf(binding.playlistCtrlPlayAllButton, binding.playlistCtrlPlayBgButton,
+            binding.playlistCtrlPlayPopupButton).forEach { button ->
+            button.setOnLongClickListener(listener)
+            button.isLongClickable = listener != null
+        }
     }
 
     override fun setVisibility(visibility: Int) {
